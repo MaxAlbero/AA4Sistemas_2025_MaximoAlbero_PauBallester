@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("UnityClient")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+81b7932e5dd3c50d0ddca7795abd603e683a0403")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+15a2c19f1c5a3a46805cac6415be8fe10de007e6")]
 [assembly: System.Reflection.AssemblyProductAttribute("UnityClient")]
 [assembly: System.Reflection.AssemblyTitleAttribute("UnityClient")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
