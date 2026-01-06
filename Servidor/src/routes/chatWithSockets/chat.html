@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html class = FullScreenObject>
+    <head>
+        <title>Chat En Clase</title>
+        <link rel="stylesheet" href="/styles.css">
+    </head>
+    
+    <header></header>
+    
+    <body class = FullScreenObject>
+        <div id="LoginContainer">
+            <div>Username: </div>
+            <input type="text" id="UsernameInput"/>
+            <div>Password: </div>
+            <input type="password" id="PasswordInput"/>
+            <p id="LoginErrorMessage", class="ErrorMessage"></p>
+            <button onclick="TryLogin()">Try Login</button>
+        </div>
+
+        <div class="ChatContainer" id="ChatContainer">
+            <div id="MessagesContainer" class ="MessagesContainer">
+
+            </div>
+            <div class="InputContainer">
+
+                <div>Message Box: </div>
+                <input type="text" id="MessageInput"/>
+                <button onclick="SendMessage()" class="MessageButton">Send</button>
+            </div>
+        </div>
+    </body>
+    
+    <footer></footer>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+
+        var socket = io();
+
+        var loginContainer = document.getElementById("LoginContainer");
+        var usernameField = document.getElementById("UsernameInput");
+        var passwordField = document.getElementById("PasswordInput");
+        var loginErrorMessage = document.getElementById("LoginErrorMessage");
+
+        var chatContainer = document.getElementById("ChatContainer");
+        chatContainer.hidden = true;
+
+        var messageContainer = document.getElementById("MessagesContainer");
+
+        var inputField = document.getElementById("MessageInput");
+
+        function CreateMessageWithData(){
+            var msgParagraph = document.createElement("p");
+            msgParagraph.textContent = messageData.text;
+
+            if(messageData.username == usernameField.value){
+                msgParagraph.classList.add("MyMessage");
+            }else {
+                msgParagraph.classList.add("OthersMessage");
+            }
+
+            messageContainer.appendChild(msgParagraph);
+        }
+
+        socket.on("ServerMessageToClient", (messageData) => {
+            CreateMessageWithData(messageData);
+        });
+
+        socket.on("ServerResponseRequestMessageListToClient", (msgDataList) => {
+
+            messageContainer.value = "";
+
+            for(messageData of msgDataList){
+                CreateMessageWithData(messageData);
+            }
+        })
+
+        function SendMessage(){
+            if(inputField.value){
+                var username = usernameField.value;
+                var text = inputField.value;
+
+                var messageData = {
+                    username: username,
+                    text: text
+                }
+
+                socket.emit("ClientMessageToServer", messageData);
+                inputField.value = "";
+            }
+        }
+
+        socket.emit("ClientRequestMessageListToServer");
+
+        function TryLogin(){
+            loginErrorMessage.value = "";
+
+            if(usernameField.value == "" || passwordField.value == ""){
+                loginErrorMessage.textContent = "User or password is blank";
+            }
+
+            var loginData = {
+                username: usernameField.value,
+                password: passwordField.value
+            };
+
+            socket.emit("LoginRequest", loginData);
+        }
+
+        socket.on("LoginResponse", (loginResponseData) => {
+            
+            if(loginResponseData.status == "error"){
+                var errorMessage = loginResponseData.message;
+                if(errorMessage == ""){
+                    errorMessage = "Unknown";
+                }
+
+                loginErrorMessage.textContent = "errorMessage";
+                return;
+            }
+
+            loginContainer.hidden = true;
+            chatContainer.hidden = false;
+
+            console.log(loginResponseData);
+        
+        });
+
+        // function PrintMessage(){
+        //     var msgText = document.createElemet("p");
+        //     msgText.classList.add("MyMessage");
+        //     msgText.textContent = infoInput.value;
+        // }
+
+    </script>
+
+</html>

@@ -21,12 +21,20 @@ app.use(morgan("dev"));
 app.use(express.urlencoded({extended: false})); //aixo fa que es treballi amb coses mes senzilles
 app.use(express.json()); //aixo ens permet indicar que express pot treballar amb json
 
-app.get("/", (req,res) => {
-    res.json({"Title": "HelloWorld"});
-});
-//app.use(require("./routes/_routes"));
+// app.get("/", (req,res) => {
+//     res.json({"Title": "HelloWorld"});
+// });
+const http = require("http"); 
+const server = http.createServer(app); //crear un servidor http
 
-app.listen(app.get("port"), () => {
+const { Server } = require("socket.io");
+
+const io = new Server(server);
+app.set("io", io);
+
+app.use(require("./routes/_routes"));
+
+server.listen(app.get("port"), () => {
     const ip = GetIp();
     const port = app.get("port");
 
