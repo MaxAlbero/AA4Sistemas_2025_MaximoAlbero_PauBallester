@@ -13,6 +13,7 @@ router.get("/", (req, res) => {
 });
 
 var io = app.get("io");
+var chatRooms = [];
 
 var messageList = [];
 
@@ -31,8 +32,6 @@ io.on("connection", (socket) => {
         messageList.push(messageData);
         io.emit("ServerMessageToClient", messageData);
     });
-
-
 
     // socket.on("TextElement", (msg) =>{
     //     console.log("Text Element: " + msg);
@@ -88,7 +87,8 @@ io.on("connection", (socket) => {
 
     });
 
-    
+
+    socket.emit("ChatRoomsData", chatRooms);
 });
 
 module.exports = router;
