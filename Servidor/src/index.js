@@ -4,8 +4,6 @@ const express = require("express");
 app = express(); //Aixo crida al constructor i el posa a la variable "app" 
 // (26/11: sense el const, "app" es una variable global, només podem fer això aqui, de normal esta malament)
 
-// require("./bddSetup");
-
 //Settings Section
 app.set("port", process.env.PORT || 3000); //la variable por la estic posant perque la vull fer servir després
 app.set("json spaces", 2); //
@@ -31,6 +29,9 @@ const { Server } = require("socket.io");
 
 const io = new Server(server);
 app.set("io", io);
+
+const bddConnection = require("./bddSetup");
+app.set("bdd", bddConnection);
 
 io.on('connection', (socket) => {
     console.log('Un cliente se ha conectado:', socket.id);
