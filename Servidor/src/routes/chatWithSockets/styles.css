@@ -1,0 +1,49 @@
+.FullScreenObject{
+    width: 100%;
+    height: 100%;
+}
+
+.ChatContainer{
+    background-color: cornflowerblue;
+    width: 100%;
+    height: 100%;
+}
+
+.MessagesContainer{
+    height: 90%;
+    
+}
+
+.InputContainer{
+    height: 10%;
+    padding-left: 10%;
+
+}
+
+.MessagesContainer p {
+    font-family: 'Times New Roman', Times, serif;
+    border-width: 2px;
+    border-style: solid;
+    margin: 5px;
+}
+
+.MyMessage{
+    border-color: green;
+    text-align: right;
+}
+
+.OthersMessage{
+    border-color: crimson;
+}
+
+.MessageInput{
+    width: 75%;
+}
+
+.MessageButton {
+    width: 20%;
+}
+
+.ErrorMessage {
+    color: red; 
+}
