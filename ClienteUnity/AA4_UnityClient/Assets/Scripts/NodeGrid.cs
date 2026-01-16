@@ -302,6 +302,8 @@ public class NodeGrid : MonoBehaviour
 
     private void Start()
     {
+        /*
+
         // Ejemplo de prueba con MÚLTIPLES jugadores
         SetupGrid(new GridSetup
         {
@@ -345,5 +347,6 @@ public class NodeGrid : MonoBehaviour
             }
         };
         UpdateGrid(update2);
+        */
     }
 }
