@@ -1,0 +1,37 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\M\u00E1ximo\\Documents\\ENTI\\2n Curs\\1r Semestre\\Sistemes Operatius i Xarxes\\AA4\\Practica\\AA4Sistemas_2025_MaximoAlbero_PauBallester\\ClienteUnity\\UnityClient\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{790B749B-B6E1-493E-8A75-3CCCCD316E9F}|UnityClient\\UnityClient.csproj|c:\\users\\m\u00E1ximo\\documents\\enti\\2n curs\\1r semestre\\sistemes operatius i xarxes\\aa4\\practica\\aa4sistemas_2025_maximoalbero_pauballester\\clienteunity\\unityclient\\unityclient\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{790B749B-B6E1-493E-8A75-3CCCCD316E9F}|UnityClient\\UnityClient.csproj|solutionrelative:unityclient\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 201,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\M\u00E1ximo\\Documents\\ENTI\\2n Curs\\1r Semestre\\Sistemes Operatius i Xarxes\\AA4\\Practica\\AA4Sistemas_2025_MaximoAlbero_PauBallester\\ClienteUnity\\UnityClient\\UnityClient\\Program.cs",
+              "RelativeDocumentMoniker": "UnityClient\\Program.cs",
+              "ToolTip": "C:\\Users\\M\u00E1ximo\\Documents\\ENTI\\2n Curs\\1r Semestre\\Sistemes Operatius i Xarxes\\AA4\\Practica\\AA4Sistemas_2025_MaximoAlbero_PauBallester\\ClienteUnity\\UnityClient\\UnityClient\\Program.cs",
+              "RelativeToolTip": "UnityClient\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACMAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-06T16:02:14.231Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
