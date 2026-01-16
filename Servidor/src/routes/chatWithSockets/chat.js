@@ -94,26 +94,26 @@ io.on("connection", (socket) => {
 module.exports = router;
 
 
-// test connection to BDD
-var mysql = require('mysql');
+// // test connection to BDD
+// var mysql = require('mysql');
 
-var con = mysql.createConnection({
-    host: "localhost",
-    user: "serverUser",
-    password: "user",
-    database: "mydb"
-});
+// var con = mysql.createConnection({
+//     host: "localhost",
+//     user: "serverUser",
+//     password: "user",
+//     database: "mydb"
+// });
 
-con.connect(function(err) {
-    if(err) throw err;
+// con.connect(function(err) {
+//     if(err) throw err;
 
-    console.log("Connected!");
+//     console.log("Connected!");
 
-    con.query("select * from Users", function (err, result, fields) {
-        if (err) {
-            console.log(err);
-        } else {
-            console.log(result);
-        }
-    });
-});
+//     con.query("select * from Users", function (err, result, fields) {
+//         if (err) {
+//             console.log(err);
+//         } else {
+//             console.log(result);
+//         }
+//     });
+// });
