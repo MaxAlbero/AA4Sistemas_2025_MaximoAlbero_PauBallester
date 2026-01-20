@@ -53,6 +53,30 @@ io.on("connection", (socket) => {
         //Podriamos crear una clase loginResponseData con las variables error y id.
         //O podriamos crear una clase loginResponseData con una variable status y un id.
         //El estatus puede ser por ahora, error|success, y el id puede o no existir.
+        const bddConnection = app.get("bdd");
+        bddConnection.query(
+        'select id from Users where username = ? and password = ?',
+        [loginData.username, loginData.password],
+        (err, result) => {
+            const loginResponseData = {};
+            if (err) {
+            console.log(err);
+            loginResponseData.status = "error";
+            loginResponseData.message = "DB error";
+            socket.emit("LoginResponse", loginResponseData);
+            return;
+            }
+            if (!result || result.length <= 0) {
+            loginResponseData.status = "error";
+            loginResponseData.message = "User or password Incorrect";
+            socket.emit("LoginResponse", loginResponseData);
+            return;
+            }
+            loginResponseData.status = "success";
+            loginResponseData.id = result[0].id;
+            socket.emit("LoginResponse", loginResponseData);
+        }
+        );
 
         //Si no existe llamare a "LoginResponse" con el error
         if(err) {
@@ -76,7 +100,7 @@ io.on("connection", (socket) => {
 
 
         //Si existe, llamare a "LoginResponse" con el ID
-        loginResponseData.statues = "success";
+        loginResponseData.status = "success";
         loginResponseData.id = result[0].id;
 
         socket.emit("LoginResponse", loginResponseData);
@@ -85,6 +109,22 @@ io.on("connection", (socket) => {
 
     });
 
+    });
+
+    socket.on("LogoutRequest", (logoutData) => {
+        console.log("Logout request recibido para usuario:", logoutData.userId);
+        
+        // Aquí puedes limpiar datos del usuario si es necesario
+        // Por ejemplo, eliminarlo de alguna lista de usuarios activos
+        
+        // Confirmar logout al cliente
+        socket.emit("LogoutResponse", { status: "success", message: "Logged out successfully" });
+    });
+
+    // También puedes manejar la desconexión del socket
+    socket.on("disconnect", () => {
+        console.log("Usuario desconectado:", socket.id);
+        // Aquí puedes limpiar recursos si el usuario se desconecta sin hacer logout explícito
     });
 
 

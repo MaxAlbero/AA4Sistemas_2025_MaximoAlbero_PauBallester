@@ -23,8 +23,8 @@ connection.connect((error) => {
         {
             console.log("Results: ");
             console.log(result);
-            console.log("Fields: ");
-            console.log(fields);
+            // console.log("Fields: ");
+            // console.log(fields);
         }
 
     })
