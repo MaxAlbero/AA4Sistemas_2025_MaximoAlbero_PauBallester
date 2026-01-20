@@ -1,40 +1,44 @@
 <!DOCTYPE html>
-<html class = FullScreenObject>
+<html class="FullScreenObject">
     <head>
         <title>Chat En Clase</title>
         <link rel="stylesheet" href="/styles.css">
+        <style>
+            html, body {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+                width: 100%;
+                font-family: Arial, sans-serif;
+            }
+        </style>
     </head>
     
-    <header></header>
-    
-    <body class = FullScreenObject>
-        <div id="LoginContainer">
+    <body class="FullScreenObject">
+        <div id="LoginContainer" style="padding: 20px; text-align: center;">
+            <h2>Login</h2>
             <div>Username: </div>
-            <input type="text" id="UsernameInput"/>
+            <input type="text" id="UsernameInput" style="margin-bottom: 10px; padding: 5px;"/>
             <div>Password: </div>
-            <input type="password" id="PasswordInput"/>
-            <p id="LoginErrorMessage", class="ErrorMessage"></p>
-            <button onclick="TryLogin()">Try Login</button>
+            <input type="password" id="PasswordInput" style="margin-bottom: 10px; padding: 5px;"/>
+            <p id="LoginErrorMessage" class="ErrorMessage"></p>
+            <button onclick="TryLogin()" style="padding: 10px 20px;">Login</button>
         </div>
 
-        <div class="ChatContainer" id="ChatContainer">
-            <div id="MessagesContainer" class ="MessagesContainer">
-
+        <div class="ChatContainer" id="ChatContainer" style="display: none; height: 100%; display: flex; flex-direction: column;">
+            <div id="MessagesContainer" class="MessagesContainer" style="flex: 1; overflow-y: auto; padding: 10px;">
+                <!-- Los mensajes aparecerán aquí -->
             </div>
-            <div class="InputContainer">
-
-                <div>Message Box: </div>
-                <input type="text" id="MessageInput"/>
-                <button onclick="SendMessage()" class="MessageButton">Send</button>
+            <div class="InputContainer" style="padding: 10px; background: #f0f0f0; display: flex; align-items: center;">
+                <div style="margin-right: 10px;">Message Box:</div>
+                <input type="text" id="MessageInput" class="MessageInput" style="flex: 1; padding: 5px;"/>
+                <button onclick="SendMessage()" class="MessageButton" style="margin-left: 10px; padding: 5px 15px;">Send</button>
             </div>
         </div>
     </body>
-    
-    <footer></footer>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-
         var socket = io();
 
         var loginContainer = document.getElementById("LoginContainer");
@@ -43,23 +47,23 @@
         var loginErrorMessage = document.getElementById("LoginErrorMessage");
 
         var chatContainer = document.getElementById("ChatContainer");
-        chatContainer.hidden = true;
-
         var messageContainer = document.getElementById("MessagesContainer");
-
         var inputField = document.getElementById("MessageInput");
 
-        function CreateMessageWithData(){
+        // Función CORREGIDA - añade parámetro messageData
+        function CreateMessageWithData(messageData) {
             var msgParagraph = document.createElement("p");
-            msgParagraph.textContent = messageData.text;
+            msgParagraph.textContent = messageData.username + ": " + messageData.text;
 
-            if(messageData.username == usernameField.value){
+            if(messageData.username == usernameField.value) {
                 msgParagraph.classList.add("MyMessage");
-            }else {
+            } else {
                 msgParagraph.classList.add("OthersMessage");
             }
 
             messageContainer.appendChild(msgParagraph);
+            // Auto-scroll al último mensaje
+            messageContainer.scrollTop = messageContainer.scrollHeight;
         }
 
         socket.on("ServerMessageToClient", (messageData) => {
@@ -67,36 +71,57 @@
         });
 
         socket.on("ServerResponseRequestMessageListToClient", (msgDataList) => {
+            messageContainer.innerHTML = ""; // Limpiar contenedor
 
-            messageContainer.value = "";
-
-            for(messageData of msgDataList){
-                CreateMessageWithData(messageData);
+            for(var i = 0; i < msgDataList.length; i++) {
+                CreateMessageWithData(msgDataList[i]);
             }
-        })
+        });
 
-        function SendMessage(){
-            if(inputField.value){
+        function SendMessage() {
+            if(inputField.value.trim() !== "") {
                 var username = usernameField.value;
                 var text = inputField.value;
 
                 var messageData = {
                     username: username,
                     text: text
-                }
+                };
 
                 socket.emit("ClientMessageToServer", messageData);
                 inputField.value = "";
+                inputField.focus();
             }
         }
 
+        usernameField.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+               TryLogin();
+            }
+        });
+        passwordField.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                TryLogin();
+            }
+        });
+
+        // Permitir enviar con Enter
+        inputField.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                SendMessage();
+                //TryLogin();
+            }
+        });
+
+        // Solicitar mensajes anteriores al conectar
         socket.emit("ClientRequestMessageListToServer");
 
-        function TryLogin(){
-            loginErrorMessage.value = "";
+        function TryLogin() {
+            loginErrorMessage.textContent = "";
 
-            if(usernameField.value == "" || passwordField.value == ""){
+            if(usernameField.value.trim() === "" || passwordField.value.trim() === "") {
                 loginErrorMessage.textContent = "User or password is blank";
+                return;
             }
 
             var loginData = {
@@ -108,30 +133,25 @@
         }
 
         socket.on("LoginResponse", (loginResponseData) => {
+            console.log("LoginResponse recibido:", loginResponseData);
             
-            if(loginResponseData.status == "error"){
-                var errorMessage = loginResponseData.message;
-                if(errorMessage == ""){
-                    errorMessage = "Unknown";
-                }
-
-                loginErrorMessage.textContent = "errorMessage";
+            // CORRECCIÓN: "statues" vs "status" (hay un typo en chat.js)
+            if(loginResponseData.status === "error" || loginResponseData.statues === "error") {
+                var errorMessage = loginResponseData.message || "Unknown error";
+                loginErrorMessage.textContent = errorMessage;
                 return;
             }
 
-            loginContainer.hidden = true;
-            chatContainer.hidden = false;
-
-            console.log(loginResponseData);
+            // Login exitoso
+            loginContainer.style.display = "none";
+            chatContainer.style.display = "flex";
+            inputField.focus();
         
         });
 
-        // function PrintMessage(){
-        //     var msgText = document.createElemet("p");
-        //     msgText.classList.add("MyMessage");
-        //     msgText.textContent = infoInput.value;
-        // }
-
+        // Conectar cuando se carga la página
+        socket.on("connect", () => {
+            console.log("Conectado al servidor");
+        });
     </script>
-
 </html>
