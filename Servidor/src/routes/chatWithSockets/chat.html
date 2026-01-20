@@ -22,14 +22,16 @@
       <button onclick="Logout()">Logout</button>
     </div>
 
-    <!-- Selector de salas -->
     <div id="RoomsContainer" hidden>
       <h3>Salas disponibles</h3>
       <ul id="RoomsList"></ul>
     </div>
 
-    <!-- Chat: oculto hasta que se seleccione una sala -->
     <div class="ChatContainer" id="ChatContainer" hidden>
+      <div class="ChatHeader">
+        <span id="CurrentRoomLabel"></span>
+        <button id="LeaveRoomBtn" class="LogoutButton" onclick="LeaveRoom()">Leave room</button>
+      </div>
       <div id="MessagesContainer" class="MessagesContainer"></div>
       <div class="InputContainer">
         <div>Message Box: </div>
@@ -58,14 +60,15 @@
     const roomsList = document.getElementById("RoomsList");
 
     const chatContainer = document.getElementById("ChatContainer");
+    const currentRoomLabel = document.getElementById("CurrentRoomLabel");
     const messageContainer = document.getElementById("MessagesContainer");
     const inputField = document.getElementById("MessageInput");
 
     // Estado
     let currentUserId = null;
     let currentRoomId = null;
+    let currentRoomName = null;
 
-    // Opcional: registrar tipo de cliente web
     socket.emit("registerClientType", "web");
 
     function TryLogin() {
@@ -75,12 +78,7 @@
         loginErrorMessage.textContent = "User or password is blank";
         return;
       }
-
-      const loginData = {
-        username: usernameField.value,
-        password: passwordField.value,
-      };
-
+      const loginData = { username: usernameField.value, password: passwordField.value };
       socket.emit("LoginRequest", loginData);
     }
 
@@ -103,11 +101,16 @@
 
       // Mostrar selector de salas y pedir listado
       roomsContainer.hidden = false;
+      chatContainer.hidden = true;
       socket.emit("requestRooms");
     });
 
-    // Renderizado de salas y unión
     socket.on("roomsInfo", (rooms) => {
+      // Si ya está en una sala, no mostrar listado
+      if (currentRoomId) {
+        roomsContainer.hidden = true;
+        return;
+      }
       roomsList.innerHTML = "";
       rooms.forEach((r) => {
         const li = document.createElement("li");
@@ -124,7 +127,8 @@
 
     function joinRoom(roomId, roomName) {
       currentRoomId = roomId;
-      // Unirse a la sala en el servidor (usa el mismo evento que Unity)
+      currentRoomName = roomName;
+
       socket.emit(
         "joinRoom",
         JSON.stringify({
@@ -134,19 +138,41 @@
         })
       );
 
-      // Cargar histórico de mensajes de esta sala
-      socket.emit("ClientRequestMessageListToServer", JSON.stringify({ roomId }));
+      // Oculta selector de salas cuando ya estás en una
+      roomsContainer.hidden = true;
 
-      // Mostrar chat
+      // Cargar histórico de esta sala y mostrar chat
+      currentRoomLabel.textContent = `Room: ${currentRoomName} (id=${currentRoomId})`;
+      messageContainer.innerHTML = "";
+      socket.emit("ClientRequestMessageListToServer", JSON.stringify({ roomId }));
       chatContainer.hidden = false;
+      inputField.focus();
+    }
+
+    function LeaveRoom() {
+      if (!currentRoomId) return;
+      socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
+      currentRoomId = null;
+      currentRoomName = null;
+
+      // Limpiar UI de chat y volver al listado de salas
+      currentRoomLabel.textContent = "";
+      messageContainer.innerHTML = "";
+      chatContainer.hidden = true;
+
+      // Mostrar de nuevo el selector de salas sin desloguear
+      roomsContainer.hidden = false;
+      socket.emit("requestRooms");
     }
 
     function Logout() {
+      // Si estás en una sala, abandónala
       if (currentRoomId) {
         socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
       }
       socket.emit("LogoutRequest", { userId: currentUserId });
 
+      // Reset UI
       userInfo.hidden = true;
       chatContainer.hidden = true;
       roomsContainer.hidden = true;
@@ -154,6 +180,7 @@
       loginContainer.hidden = false;
       currentUserId = null;
       currentRoomId = null;
+      currentRoomName = null;
       usernameField.value = "";
       passwordField.value = "";
       messageContainer.innerHTML = "";
@@ -190,7 +217,7 @@
     }
 
     socket.on("ServerMessageToClient", (messageData) => {
-      // Ignorar mensajes de otras salas si el cliente está en otra
+      // Ignorar mensajes de otras salas
       if (messageData.roomId && currentRoomId && messageData.roomId !== currentRoomId) return;
       CreateMessageWithData(messageData);
     });
@@ -204,7 +231,7 @@
 
     document.addEventListener("keydown", (e) => {
       if (e.key === "Enter") SendMessage();
-      if (e.key === "Escape") Logout();
+      if (e.key === "Escape") LeaveRoom(); // ahora ESC solo sale de la sala
     });
   </script>
 </html>

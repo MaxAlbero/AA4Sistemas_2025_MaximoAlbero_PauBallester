@@ -47,24 +47,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('joinRoom', (data) => {
-    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-    const { roomId, playerId, playerName } = parsed;
-
-    socket.join(roomId);
-
-    const state = roomState.get(roomId) || { unityCount: 0, paused: false };
-    if (clientType === 'unity') state.unityCount++;
-    // Si ahora hay al menos 1 unity, quitar pausa
-    if (state.unityCount > 0 && state.paused) {
-      state.paused = false;
-      io.to(roomId).emit('pauseState', { paused: false });
-      console.log(`Sala ${roomId} reanudada (unityCount=${state.unityCount})`);
-    }
-    roomState.set(roomId, state);
-
-    const gridSetup = { playerId, playerName, sizeX: 6, sizeY: 12 };
-    socket.emit('setupGrid', JSON.stringify(gridSetup));
-  });
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        const { roomId } = parsed;
+        // Al unirse, que el socket quede en la room y no reciba roomsInfo mientras esté dentro:
+        socket.join(roomId);
+        socket.data.currentRoomId = roomId; // guardar estado en el socket
+    });
 
   socket.on('gameUpdate', (data) => {
     const parsed = typeof data === 'string' ? JSON.parse(data) : data;
@@ -84,22 +72,12 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('updateGrid', JSON.stringify(gridUpdate));
   });
 
-  socket.on('leaveRoom', (data) => {
-    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-    const { roomId } = parsed;
-
-    socket.leave(roomId);
-    const state = roomState.get(roomId);
-    if (state && clientType === 'unity') {
-      state.unityCount = Math.max(0, state.unityCount - 1);
-      if (state.unityCount === 0) {
-        state.paused = true;
-        io.to(roomId).emit('pauseState', { paused: true });
-        console.log(`Sala ${roomId} en pausa (unityCount=0)`);
-      }
-      roomState.set(roomId, state);
-    }
-  });
+    socket.on('leaveRoom', (data) => {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        const { roomId } = parsed;
+        socket.leave(roomId);
+        socket.data.currentRoomId = null;
+    });
 
   socket.on('disconnect', () => {
     console.log('Cliente desconectado:', socket.id);
@@ -108,15 +86,20 @@ io.on('connection', (socket) => {
     console.log("fasfsadufdshfiuhfdsiufhdif");
   });
     // Listado de salas desde BDD
-    socket.on("requestRooms", () => {
-        const db = app.get("bdd");
-        db.query("SELECT id, name FROM Rooms ORDER BY id ASC", (err, rows) => {
-        if (err) {
-            console.error("Error fetching rooms:", err);
-            socket.emit("roomsInfo", []);
+    socket.on('requestRooms', () => {
+        // Si el cliente ya está en una sala, no devolver listado
+        if (socket.data && socket.data.currentRoomId) {
+            socket.emit('roomsInfo', []); // o no emitir nada; aquí devolvemos lista vacía por claridad del cliente
             return;
         }
-        socket.emit("roomsInfo", rows);
+        const db = app.get('bdd');
+        db.query('SELECT id, name FROM Rooms ORDER BY id ASC', (err, rows) => {
+            if (err) {
+            console.error('Error fetching rooms:', err);
+            socket.emit('roomsInfo', []);
+            return;
+            }
+            socket.emit('roomsInfo', rows);
         });
     });
 });
