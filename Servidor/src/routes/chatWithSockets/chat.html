@@ -34,7 +34,17 @@
                 <input type="text" id="MessageInput" class="MessageInput" style="flex: 1; padding: 5px;"/>
                 <button onclick="SendMessage()" class="MessageButton" style="margin-left: 10px; padding: 5px 15px;">Send</button>
             </div>
+
+            <div id="UserInfo" hidden>
+                <p id="LoggedUser"></p>
+                <button onclick="Logout()">Logout</button>
+            </div>
+
+            <div id="RoomsContainer">
+                <ul id="RoomsList"></ul>
+            </div>
         </div>
+
     </body>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -129,6 +139,8 @@
                 password: passwordField.value
             };
 
+            document.getElementById('UserInfo').hidden = false
+
             socket.emit("LoginRequest", loginData);
         }
 
@@ -153,5 +165,45 @@
         socket.on("connect", () => {
             console.log("Conectado al servidor");
         });
+
+
+
+          // tras LoginResponse success:
+            // LoggedUser.textContent = `Logged as ${usernameField.value} (id=${loginResponseData.id})`;
+            // UserInfo.hidden = false;
+
+            function Logout() {
+                UserInfo.hidden = true;
+                chatContainer.hidden = true;
+                loginContainer.hidden = false;
+                socket.emit('leaveRoom', { roomId: currentRoomId, playerId: loginResponseData.id });
+                currentRoomId = null;
+            }
+
+            // teclado: Enter envía mensaje, ESC sale de la sala
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') SendMessage();
+                if (e.key === 'Escape' && currentRoomId) Logout();
+            });
+
+            // listado de salas: pedir al servidor y renderizar
+            socket.on('roomsInfo', (rooms) => {
+                RoomsList.innerHTML = '';
+                rooms.forEach(r => {
+                const li = document.createElement('li');
+                li.textContent = `Room ${r.id}: ${r.name}`;
+                const btn = document.createElement('button');
+                btn.textContent = 'Join';
+                btn.onclick = () => {
+                    currentRoomId = r.id;
+                    socket.emit('joinRoom', JSON.stringify({ roomId: r.id, playerId: loginResponseData.id, playerName: usernameField.value }));
+                };
+                li.appendChild(btn);
+                RoomsList.appendChild(li);
+                });
+            });
+
+            // pedir salas al cargar
+            socket.emit('requestRooms');
     </script>
 </html>
