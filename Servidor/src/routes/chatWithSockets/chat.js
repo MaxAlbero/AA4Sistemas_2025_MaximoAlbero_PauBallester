@@ -1,15 +1,9 @@
 const { Router } = require("express");
-const { Socket } = require("socket.io");
 const router = Router();
 
 router.get("/", (req, res) => {
-    
-    //console.log("h ", __dirname);
-    var path = require("path");
-
-    console.log(path.resolve(__dirname + "/chat.html"));
-    res.sendFile(path.resolve( __dirname + "/chat.html"));
-
+  var path = require("path");
+  res.sendFile(path.resolve(__dirname + "/chat.html"));
 });
 
 var io = app.get("io");
@@ -38,27 +32,13 @@ io.on("connection", (socket) => {
     // });
 
     socket.on("LoginRequest", (loginData) => {
-
-        //Preguntar a la bdd la lista de usuarios con username y contraseña
-        var bddConnection = app.get("bdd");
-
-        bddConnection.query('select id from Users where username = "' + loginData.username 
-            + '" and password = "' + loginData.password + '";', 
-            (err, result, fields) => {
-        
-        var loginResponseData = {
-
-        }
-
-        //Podriamos crear una clase loginResponseData con las variables error y id.
-        //O podriamos crear una clase loginResponseData con una variable status y un id.
-        //El estatus puede ser por ahora, error|success, y el id puede o no existir.
         const bddConnection = app.get("bdd");
         bddConnection.query(
         'select id from Users where username = ? and password = ?',
         [loginData.username, loginData.password],
         (err, result) => {
             const loginResponseData = {};
+
             if (err) {
             console.log(err);
             loginResponseData.status = "error";
@@ -66,67 +46,24 @@ io.on("connection", (socket) => {
             socket.emit("LoginResponse", loginResponseData);
             return;
             }
+
             if (!result || result.length <= 0) {
             loginResponseData.status = "error";
             loginResponseData.message = "User or password Incorrect";
             socket.emit("LoginResponse", loginResponseData);
             return;
             }
+
             loginResponseData.status = "success";
             loginResponseData.id = result[0].id;
             socket.emit("LoginResponse", loginResponseData);
         }
         );
-
-        //Si no existe llamare a "LoginResponse" con el error
-        if(err) {
-            console.log(err);
-
-            loginResponseData.status = "error";
-
-            socket.emit("LoginResponse", loginResponseData);
-            return;
-        }
-
-        if(result.length <= 0){
-            console.log("User or password Incorrecta");
-
-            loginResponseData.status = "error";
-            loginResponseData.message = "User or password Incorrect";
-
-            socket.emit("LoginResponse", loginResponseData);
-            return;
-        }
-
-
-        //Si existe, llamare a "LoginResponse" con el ID
-        loginResponseData.status = "success";
-        loginResponseData.id = result[0].id;
-
-        socket.emit("LoginResponse", loginResponseData);
-
-        console.log(loginResponseData);
-
-    });
-
     });
 
     socket.on("LogoutRequest", (logoutData) => {
-        console.log("Logout request recibido para usuario:", logoutData.userId);
-        
-        // Aquí puedes limpiar datos del usuario si es necesario
-        // Por ejemplo, eliminarlo de alguna lista de usuarios activos
-        
-        // Confirmar logout al cliente
         socket.emit("LogoutResponse", { status: "success", message: "Logged out successfully" });
     });
-
-    // También puedes manejar la desconexión del socket
-    socket.on("disconnect", () => {
-        console.log("Usuario desconectado:", socket.id);
-        // Aquí puedes limpiar recursos si el usuario se desconecta sin hacer logout explícito
-    });
-
 
     socket.emit("ChatRoomsData", chatRooms);
 });

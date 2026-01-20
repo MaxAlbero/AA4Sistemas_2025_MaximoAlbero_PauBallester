@@ -112,26 +112,27 @@
       // );
     });
 
-    function Logout() {
-      // Si estás en una sala, abandónala
-      if (currentRoomId) {
-        socket.emit(
-          "leaveRoom",
-          JSON.stringify({ roomId: currentRoomId, playerId: currentUserId })
-        );
-      }
-
-      // Limpiar estado y UI
-      currentUserId = null;
-      currentRoomId = null;
-      usernameField.value = "";
-      passwordField.value = "";
-      messageContainer.innerHTML = "";
-
-      userInfo.hidden = true;
-      chatContainer.hidden = true;
-      loginContainer.hidden = false;
+  function Logout() {
+    if (currentUserId) {
+      socket.emit("LogoutRequest", { userId: currentUserId });
     }
+    if (currentRoomId) {
+      socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
+    }
+
+    userInfo.hidden = true;
+    chatContainer.hidden = true;
+    loginContainer.hidden = false;
+    currentUserId = null;
+    currentRoomId = null;
+    usernameField.value = "";
+    passwordField.value = "";
+    messageContainer.innerHTML = "";
+  }
+
+  socket.on("LogoutResponse", (data) => {
+    console.log("LogoutResponse:", data);
+  });
 
     function SendMessage() {
       if (inputField.value) {

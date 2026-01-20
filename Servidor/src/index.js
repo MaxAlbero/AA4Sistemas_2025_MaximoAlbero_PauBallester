@@ -107,6 +107,18 @@ io.on('connection', (socket) => {
     // Esto se puede lograr guardando roomId en el socket al unirse y aplicando la misma lógica que leaveRoom.
     console.log("fasfsadufdshfiuhfdsiufhdif");
   });
+    // Listado de salas desde BDD
+    socket.on('requestRooms', () => {
+        const db = app.get('bdd');
+        db.query('SELECT id, name FROM Rooms ORDER BY id ASC', (err, rows) => {
+        if (err) {
+            console.error('Error fetching rooms:', err);
+            socket.emit('roomsInfo', []);
+            return;
+        }
+        socket.emit('roomsInfo', rows);
+        });
+    });
 });
 
 app.use(require("./routes/_routes"));
