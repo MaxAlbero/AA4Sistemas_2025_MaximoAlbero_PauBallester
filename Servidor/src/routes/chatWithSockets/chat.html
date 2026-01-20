@@ -1,209 +1,180 @@
 <!DOCTYPE html>
 <html class="FullScreenObject">
-    <head>
-        <title>Chat En Clase</title>
-        <link rel="stylesheet" href="/styles.css">
-        <style>
-            html, body {
-                margin: 0;
-                padding: 0;
-                height: 100%;
-                width: 100%;
-                font-family: Arial, sans-serif;
-            }
-        </style>
-    </head>
-    
-    <body class="FullScreenObject">
-        <div id="LoginContainer" style="padding: 20px; text-align: center;">
-            <h2>Login</h2>
-            <div>Username: </div>
-            <input type="text" id="UsernameInput" style="margin-bottom: 10px; padding: 5px;"/>
-            <div>Password: </div>
-            <input type="password" id="PasswordInput" style="margin-bottom: 10px; padding: 5px;"/>
-            <p id="LoginErrorMessage" class="ErrorMessage"></p>
-            <button onclick="TryLogin()" style="padding: 10px 20px;">Login</button>
-        </div>
+  <head>
+    <title>Chat En Clase</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
 
-        <div class="ChatContainer" id="ChatContainer" style="display: none; height: 100%; display: flex; flex-direction: column;">
-            <div id="MessagesContainer" class="MessagesContainer" style="flex: 1; overflow-y: auto; padding: 10px;">
-                <!-- Los mensajes aparecerán aquí -->
-            </div>
-            <div class="InputContainer" style="padding: 10px; background: #f0f0f0; display: flex; align-items: center;">
-                <div style="margin-right: 10px;">Message Box:</div>
-                <input type="text" id="MessageInput" class="MessageInput" style="flex: 1; padding: 5px;"/>
-                <button onclick="SendMessage()" class="MessageButton" style="margin-left: 10px; padding: 5px 15px;">Send</button>
-            </div>
+  <header></header>
 
-            <div id="UserInfo" hidden>
-                <p id="LoggedUser"></p>
-                <button onclick="Logout()">Logout</button>
-            </div>
+  <body class="FullScreenObject">
+    <div id="LoginContainer">
+      <div>Username: </div>
+      <input type="text" id="UsernameInput" />
+      <div>Password: </div>
+      <input type="password" id="PasswordInput" />
+      <p id="LoginErrorMessage" class="ErrorMessage"></p>
+      <button onclick="TryLogin()">Try Login</button>
+    </div>
 
-            <div id="RoomsContainer">
-                <ul id="RoomsList"></ul>
-            </div>
-        </div>
+    <!-- Bloque de usuario: inicialmente oculto -->
+    <div id="UserInfo" hidden>
+      <p id="LoggedUser"></p>
+      <button onclick="Logout()">Logout</button>
+    </div>
 
-    </body>
+    <!-- Chat: inicialmente oculto -->
+    <div class="ChatContainer" id="ChatContainer" hidden>
+      <div id="MessagesContainer" class="MessagesContainer"></div>
+      <div class="InputContainer">
+        <div>Message Box: </div>
+        <input type="text" id="MessageInput" />
+        <button onclick="SendMessage()" class="MessageButton">Send</button>
+      </div>
+    </div>
+  </body>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        var socket = io();
+  <footer></footer>
 
-        var loginContainer = document.getElementById("LoginContainer");
-        var usernameField = document.getElementById("UsernameInput");
-        var passwordField = document.getElementById("PasswordInput");
-        var loginErrorMessage = document.getElementById("LoginErrorMessage");
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
 
-        var chatContainer = document.getElementById("ChatContainer");
-        var messageContainer = document.getElementById("MessagesContainer");
-        var inputField = document.getElementById("MessageInput");
+    // Referencias UI
+    const loginContainer = document.getElementById("LoginContainer");
+    const usernameField = document.getElementById("UsernameInput");
+    const passwordField = document.getElementById("PasswordInput");
+    const loginErrorMessage = document.getElementById("LoginErrorMessage");
 
-        // Función CORREGIDA - añade parámetro messageData
-        function CreateMessageWithData(messageData) {
-            var msgParagraph = document.createElement("p");
-            msgParagraph.textContent = messageData.username + ": " + messageData.text;
+    const userInfo = document.getElementById("UserInfo");
+    const loggedUser = document.getElementById("LoggedUser");
 
-            if(messageData.username == usernameField.value) {
-                msgParagraph.classList.add("MyMessage");
-            } else {
-                msgParagraph.classList.add("OthersMessage");
-            }
+    const chatContainer = document.getElementById("ChatContainer");
+    const messageContainer = document.getElementById("MessagesContainer");
+    const inputField = document.getElementById("MessageInput");
 
-            messageContainer.appendChild(msgParagraph);
-            // Auto-scroll al último mensaje
-            messageContainer.scrollTop = messageContainer.scrollHeight;
-        }
+    // Estado de sesión y sala
+    let currentUserId = null;
+    let currentRoomId = null;
 
-        socket.on("ServerMessageToClient", (messageData) => {
-            CreateMessageWithData(messageData);
-        });
+    // Opcional: registrar tipo de cliente
+    if (socket && socket.emit) {
+      socket.emit("registerClientType", "web");
+    }
 
-        socket.on("ServerResponseRequestMessageListToClient", (msgDataList) => {
-            messageContainer.innerHTML = ""; // Limpiar contenedor
+    function TryLogin() {
+      loginErrorMessage.textContent = "";
 
-            for(var i = 0; i < msgDataList.length; i++) {
-                CreateMessageWithData(msgDataList[i]);
-            }
-        });
+      if (!usernameField.value || !passwordField.value) {
+        loginErrorMessage.textContent = "User or password is blank";
+        return;
+      }
 
-        function SendMessage() {
-            if(inputField.value.trim() !== "") {
-                var username = usernameField.value;
-                var text = inputField.value;
+      const loginData = {
+        username: usernameField.value,
+        password: passwordField.value,
+      };
 
-                var messageData = {
-                    username: username,
-                    text: text
-                };
+      socket.emit("LoginRequest", loginData);
+    }
 
-                socket.emit("ClientMessageToServer", messageData);
-                inputField.value = "";
-                inputField.focus();
-            }
-        }
+    socket.on("LoginResponse", (loginResponseData) => {
+      // Soporta tanto 'status' como 'statues' por compatibilidad con el backend actual
+      const isSuccess =
+        loginResponseData &&
+        (loginResponseData.status === "success" ||
+          loginResponseData.statues === "success");
 
-        usernameField.addEventListener("keypress", function(event) {
-            if (event.key === "Enter") {
-               TryLogin();
-            }
-        });
-        passwordField.addEventListener("keypress", function(event) {
-            if (event.key === "Enter") {
-                TryLogin();
-            }
-        });
+      if (!isSuccess) {
+        const errorMessage =
+          (loginResponseData && loginResponseData.message) || "Unknown";
+        loginErrorMessage.textContent = errorMessage;
+        return;
+      }
 
-        // Permitir enviar con Enter
-        inputField.addEventListener("keypress", function(event) {
-            if (event.key === "Enter") {
-                SendMessage();
-                //TryLogin();
-            }
-        });
+      // Éxito
+      currentUserId = loginResponseData.id;
+      loggedUser.textContent = `Usuario: ${usernameField.value} (id: ${currentUserId})`;
 
-        // Solicitar mensajes anteriores al conectar
-        socket.emit("ClientRequestMessageListToServer");
+      userInfo.hidden = false;
+      loginContainer.hidden = true;
+      chatContainer.hidden = false;
 
-        function TryLogin() {
-            loginErrorMessage.textContent = "";
+      // Si quieres unirte automáticamente a una sala por defecto, descomenta:
+      // currentRoomId = "1";
+      // socket.emit(
+      //   "joinRoom",
+      //   JSON.stringify({
+      //     roomId: currentRoomId,
+      //     playerId: currentUserId,
+      //     playerName: usernameField.value,
+      //   })
+      // );
+    });
 
-            if(usernameField.value.trim() === "" || passwordField.value.trim() === "") {
-                loginErrorMessage.textContent = "User or password is blank";
-                return;
-            }
+    function Logout() {
+      // Si estás en una sala, abandónala
+      if (currentRoomId) {
+        socket.emit(
+          "leaveRoom",
+          JSON.stringify({ roomId: currentRoomId, playerId: currentUserId })
+        );
+      }
 
-            var loginData = {
-                username: usernameField.value,
-                password: passwordField.value
-            };
+      // Limpiar estado y UI
+      currentUserId = null;
+      currentRoomId = null;
+      usernameField.value = "";
+      passwordField.value = "";
+      messageContainer.innerHTML = "";
 
-            document.getElementById('UserInfo').hidden = false
+      userInfo.hidden = true;
+      chatContainer.hidden = true;
+      loginContainer.hidden = false;
+    }
 
-            socket.emit("LoginRequest", loginData);
-        }
+    function SendMessage() {
+      if (inputField.value) {
+        const messageData = {
+          username: usernameField.value,
+          text: inputField.value,
+        };
+        socket.emit("ClientMessageToServer", messageData);
+        inputField.value = "";
+      }
+    }
 
-        socket.on("LoginResponse", (loginResponseData) => {
-            console.log("LoginResponse recibido:", loginResponseData);
-            
-            // CORRECCIÓN: "statues" vs "status" (hay un typo en chat.js)
-            if(loginResponseData.status === "error" || loginResponseData.statues === "error") {
-                var errorMessage = loginResponseData.message || "Unknown error";
-                loginErrorMessage.textContent = errorMessage;
-                return;
-            }
+    function CreateMessageWithData(messageData) {
+      const msgParagraph = document.createElement("p");
+      msgParagraph.textContent = messageData.text;
 
-            // Login exitoso
-            loginContainer.style.display = "none";
-            chatContainer.style.display = "flex";
-            inputField.focus();
-        
-        });
+      if (messageData.username === usernameField.value) {
+        msgParagraph.classList.add("MyMessage");
+      } else {
+        msgParagraph.classList.add("OthersMessage");
+      }
 
-        // Conectar cuando se carga la página
-        socket.on("connect", () => {
-            console.log("Conectado al servidor");
-        });
+      messageContainer.appendChild(msgParagraph);
+    }
 
+    socket.on("ServerMessageToClient", (messageData) => {
+      CreateMessageWithData(messageData);
+    });
 
+    socket.on("ServerResponseRequestMessageListToClient", (msgDataList) => {
+      messageContainer.innerHTML = "";
+      for (const messageData of msgDataList) {
+        CreateMessageWithData(messageData);
+      }
+    });
 
-          // tras LoginResponse success:
-            // LoggedUser.textContent = `Logged as ${usernameField.value} (id=${loginResponseData.id})`;
-            // UserInfo.hidden = false;
+    // Cargar historial al entrar
+    socket.emit("ClientRequestMessageListToServer");
 
-            function Logout() {
-                UserInfo.hidden = true;
-                chatContainer.hidden = true;
-                loginContainer.hidden = false;
-                socket.emit('leaveRoom', { roomId: currentRoomId, playerId: loginResponseData.id });
-                currentRoomId = null;
-            }
-
-            // teclado: Enter envía mensaje, ESC sale de la sala
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') SendMessage();
-                if (e.key === 'Escape' && currentRoomId) Logout();
-            });
-
-            // listado de salas: pedir al servidor y renderizar
-            socket.on('roomsInfo', (rooms) => {
-                RoomsList.innerHTML = '';
-                rooms.forEach(r => {
-                const li = document.createElement('li');
-                li.textContent = `Room ${r.id}: ${r.name}`;
-                const btn = document.createElement('button');
-                btn.textContent = 'Join';
-                btn.onclick = () => {
-                    currentRoomId = r.id;
-                    socket.emit('joinRoom', JSON.stringify({ roomId: r.id, playerId: loginResponseData.id, playerName: usernameField.value }));
-                };
-                li.appendChild(btn);
-                RoomsList.appendChild(li);
-                });
-            });
-
-            // pedir salas al cargar
-            socket.emit('requestRooms');
-    </script>
+    // Atajos de teclado
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") SendMessage();
+      if (e.key === "Escape") Logout();
+    });
+  </script>
 </html>
