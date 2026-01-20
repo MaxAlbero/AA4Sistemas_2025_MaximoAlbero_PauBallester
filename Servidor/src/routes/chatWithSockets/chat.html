@@ -17,13 +17,18 @@
       <button onclick="TryLogin()">Try Login</button>
     </div>
 
-    <!-- Bloque de usuario: inicialmente oculto -->
     <div id="UserInfo" hidden>
       <p id="LoggedUser"></p>
       <button onclick="Logout()">Logout</button>
     </div>
 
-    <!-- Chat: inicialmente oculto -->
+    <!-- Selector de salas -->
+    <div id="RoomsContainer" hidden>
+      <h3>Salas disponibles</h3>
+      <ul id="RoomsList"></ul>
+    </div>
+
+    <!-- Chat: oculto hasta que se seleccione una sala -->
     <div class="ChatContainer" id="ChatContainer" hidden>
       <div id="MessagesContainer" class="MessagesContainer"></div>
       <div class="InputContainer">
@@ -49,18 +54,19 @@
     const userInfo = document.getElementById("UserInfo");
     const loggedUser = document.getElementById("LoggedUser");
 
+    const roomsContainer = document.getElementById("RoomsContainer");
+    const roomsList = document.getElementById("RoomsList");
+
     const chatContainer = document.getElementById("ChatContainer");
     const messageContainer = document.getElementById("MessagesContainer");
     const inputField = document.getElementById("MessageInput");
 
-    // Estado de sesión y sala
+    // Estado
     let currentUserId = null;
     let currentRoomId = null;
 
-    // Opcional: registrar tipo de cliente
-    if (socket && socket.emit) {
-      socket.emit("registerClientType", "web");
-    }
+    // Opcional: registrar tipo de cliente web
+    socket.emit("registerClientType", "web");
 
     function TryLogin() {
       loginErrorMessage.textContent = "";
@@ -79,75 +85,99 @@
     }
 
     socket.on("LoginResponse", (loginResponseData) => {
-      // Soporta tanto 'status' como 'statues' por compatibilidad con el backend actual
       const isSuccess =
         loginResponseData &&
-        (loginResponseData.status === "success" ||
-          loginResponseData.statues === "success");
+        (loginResponseData.status === "success" || loginResponseData.statues === "success");
 
       if (!isSuccess) {
-        const errorMessage =
-          (loginResponseData && loginResponseData.message) || "Unknown";
+        const errorMessage = (loginResponseData && loginResponseData.message) || "Unknown";
         loginErrorMessage.textContent = errorMessage;
         return;
       }
 
-      // Éxito
       currentUserId = loginResponseData.id;
       loggedUser.textContent = `Usuario: ${usernameField.value} (id: ${currentUserId})`;
 
       userInfo.hidden = false;
       loginContainer.hidden = true;
-      chatContainer.hidden = false;
 
-      // Si quieres unirte automáticamente a una sala por defecto, descomenta:
-      // currentRoomId = "1";
-      // socket.emit(
-      //   "joinRoom",
-      //   JSON.stringify({
-      //     roomId: currentRoomId,
-      //     playerId: currentUserId,
-      //     playerName: usernameField.value,
-      //   })
-      // );
+      // Mostrar selector de salas y pedir listado
+      roomsContainer.hidden = false;
+      socket.emit("requestRooms");
     });
 
-  function Logout() {
-    if (currentUserId) {
+    // Renderizado de salas y unión
+    socket.on("roomsInfo", (rooms) => {
+      roomsList.innerHTML = "";
+      rooms.forEach((r) => {
+        const li = document.createElement("li");
+        li.textContent = `${r.name} (id=${r.id})`;
+
+        const btn = document.createElement("button");
+        btn.textContent = "Join";
+        btn.onclick = () => joinRoom(r.id, r.name);
+
+        li.appendChild(btn);
+        roomsList.appendChild(li);
+      });
+    });
+
+    function joinRoom(roomId, roomName) {
+      currentRoomId = roomId;
+      // Unirse a la sala en el servidor (usa el mismo evento que Unity)
+      socket.emit(
+        "joinRoom",
+        JSON.stringify({
+          roomId: roomId,
+          playerId: currentUserId,
+          playerName: usernameField.value,
+        })
+      );
+
+      // Cargar histórico de mensajes de esta sala
+      socket.emit("ClientRequestMessageListToServer", JSON.stringify({ roomId }));
+
+      // Mostrar chat
+      chatContainer.hidden = false;
+    }
+
+    function Logout() {
+      if (currentRoomId) {
+        socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
+      }
       socket.emit("LogoutRequest", { userId: currentUserId });
-    }
-    if (currentRoomId) {
-      socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
-    }
 
-    userInfo.hidden = true;
-    chatContainer.hidden = true;
-    loginContainer.hidden = false;
-    currentUserId = null;
-    currentRoomId = null;
-    usernameField.value = "";
-    passwordField.value = "";
-    messageContainer.innerHTML = "";
-  }
+      userInfo.hidden = true;
+      chatContainer.hidden = true;
+      roomsContainer.hidden = true;
 
-  socket.on("LogoutResponse", (data) => {
-    console.log("LogoutResponse:", data);
-  });
+      loginContainer.hidden = false;
+      currentUserId = null;
+      currentRoomId = null;
+      usernameField.value = "";
+      passwordField.value = "";
+      messageContainer.innerHTML = "";
+    }
 
     function SendMessage() {
-      if (inputField.value) {
-        const messageData = {
-          username: usernameField.value,
-          text: inputField.value,
-        };
-        socket.emit("ClientMessageToServer", messageData);
-        inputField.value = "";
-      }
+      const text = inputField.value && inputField.value.trim();
+      if (!text || !currentRoomId || !currentUserId) return;
+
+      const messageData = {
+        userId: currentUserId,
+        roomId: currentRoomId,
+        username: usernameField.value,
+        text: text,
+      };
+
+      socket.emit("ClientMessageToServer", JSON.stringify(messageData));
+      inputField.value = "";
+      inputField.focus();
     }
 
     function CreateMessageWithData(messageData) {
       const msgParagraph = document.createElement("p");
-      msgParagraph.textContent = messageData.text;
+      msgParagraph.textContent = `${messageData.username}: ${messageData.text}`;
 
       if (messageData.username === usernameField.value) {
         msgParagraph.classList.add("MyMessage");
@@ -156,9 +186,12 @@
       }
 
       messageContainer.appendChild(msgParagraph);
+      messageContainer.scrollTop = messageContainer.scrollHeight;
     }
 
     socket.on("ServerMessageToClient", (messageData) => {
+      // Ignorar mensajes de otras salas si el cliente está en otra
+      if (messageData.roomId && currentRoomId && messageData.roomId !== currentRoomId) return;
       CreateMessageWithData(messageData);
     });
 
@@ -169,10 +202,6 @@
       }
     });
 
-    // Cargar historial al entrar
-    socket.emit("ClientRequestMessageListToServer");
-
-    // Atajos de teclado
     document.addEventListener("keydown", (e) => {
       if (e.key === "Enter") SendMessage();
       if (e.key === "Escape") Logout();

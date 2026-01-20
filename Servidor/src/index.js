@@ -108,15 +108,15 @@ io.on('connection', (socket) => {
     console.log("fasfsadufdshfiuhfdsiufhdif");
   });
     // Listado de salas desde BDD
-    socket.on('requestRooms', () => {
-        const db = app.get('bdd');
-        db.query('SELECT id, name FROM Rooms ORDER BY id ASC', (err, rows) => {
+    socket.on("requestRooms", () => {
+        const db = app.get("bdd");
+        db.query("SELECT id, name FROM Rooms ORDER BY id ASC", (err, rows) => {
         if (err) {
-            console.error('Error fetching rooms:', err);
-            socket.emit('roomsInfo', []);
+            console.error("Error fetching rooms:", err);
+            socket.emit("roomsInfo", []);
             return;
         }
-        socket.emit('roomsInfo', rows);
+        socket.emit("roomsInfo", rows);
         });
     });
 });
