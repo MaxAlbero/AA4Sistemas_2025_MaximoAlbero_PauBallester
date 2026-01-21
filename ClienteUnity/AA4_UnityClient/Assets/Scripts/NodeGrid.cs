@@ -117,12 +117,6 @@ public class NodeGrid : MonoBehaviour
 
     public void SetupGrid(GridSetup gridSetup)
     {
-        //TODO Add Code Here
-        /*
-           This function must be called from the server connection script.
-           Here you need to implement the necessary logic so that your visual grid implementation for setup the grid
-       */
-
         // Si ya existe una grid para este jugador, la eliminamos primero
         if (playerGrids.ContainsKey(gridSetup.playerId))
         {
@@ -177,14 +171,6 @@ public class NodeGrid : MonoBehaviour
 
     public void UpdateGrid(GridUpdate gridUpdate)
     {
-        //TODO Add Code Here
-        /*
-	        This function must be called from the server connection script.
-	        Here you need to implement the necessary logic so that your visual grid implementation is updated and the changes can be displayed.
-
-	        It is recommended to add variables to the classes defined above to facilitate integration.
-	     */
-
         if (!playerGrids.ContainsKey(gridUpdate.playerId))
         {
             Debug.LogError($"No existe grid para el jugador ID: {gridUpdate.playerId}. Llama a SetupGrid primero.");
@@ -300,53 +286,42 @@ public class NodeGrid : MonoBehaviour
         }
     }
 
-    private void Start()
-    {
-        /*
 
-        // Ejemplo de prueba con MÚLTIPLES jugadores
-        SetupGrid(new GridSetup
-        {
-            playerId = 0,
-            playerName = "Player 1",
-            sizeX = 6,
-            sizeY = 12
-        });
 
-        SetupGrid(new GridSetup
-        {
-            playerId = 1,
-            playerName = "Player 2",
-            sizeX = 6,
-            sizeY = 12
-        });
+    //private void Start()
+    //{
+    //    The code shown below is an example of how to convert GridUpdate objects to JSON and vice versa.
 
-        // Actualizar grid del jugador 0
-        GridUpdate update1 = new GridUpdate
-        {
-            playerId = 0,
-            playerName = "Player 1",
-            updatedNodes = new List<Node>
-            {
-                new Node(Node.JewelType.Red, 0, 1),
-                new Node(Node.JewelType.Green, 0, 2),
-                new Node(Node.JewelType.Blue, 0, 3)
-            }
-        };
-        UpdateGrid(update1);
+    //    SetupGrid(new()
+    //    {
+    //        playerId = 0,
+    //        playerName = "P1",
+    //        sizeX = 6,
+    //        sizeY = 12
+    //    });
 
-        // Actualizar grid del jugador 1
-        GridUpdate update2 = new GridUpdate
-        {
-            playerId = 1,
-            playerName = "Player 2",
-            updatedNodes = new List<Node>
-            {
-                new Node(Node.JewelType.Yellow, 2, 5),
-                new Node(Node.JewelType.Purple, 3, 5)
-            }
-        };
-        UpdateGrid(update2);
-        */
-    }
+    //    string json = JsonUtility.ToJson(_grid);
+
+    //    Debug.Log(json);
+
+    //    Grid g = JsonUtility.FromJson<Grid>(json);
+
+    //    GridUpdate update = new()
+    //    {
+    //        playerId = 0,
+    //        playerName = "P1",
+    //        updatedNodes = new()
+    //    };
+
+    //    update.updatedNodes.Add(new Node(Node.JewelType.Red, 0, 1));
+    //    update.updatedNodes.Add(new Node(Node.JewelType.Green, 0, 2));
+    //    update.updatedNodes.Add(new Node(Node.JewelType.Blue, 0, 3));
+    //    update.updatedNodes.Add(new Node(Node.JewelType.None, 0, 4));
+
+    //    string json2 = JsonUtility.ToJson(update);
+
+    //    Debug.Log(json2);
+
+    //    GridUpdate update2 = JsonUtility.FromJson<GridUpdate>(json2);
+    //}
 }
