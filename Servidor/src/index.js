@@ -46,13 +46,24 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('joinRoom', (data) => {
-        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-        const { roomId } = parsed;
-        // Al unirse, que el socket quede en la room y no reciba roomsInfo mientras esté dentro:
-        socket.join(roomId);
-        socket.data.currentRoomId = roomId; // guardar estado en el socket
-    });
+    socket.on('joinRoom', (data) => {
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    const { roomId, playerId, playerName } = parsed;
+
+    socket.join(roomId);
+    socket.data.currentRoomId = roomId;
+
+    // Emitir setup inicial de la grid sólo para visualización del cliente
+    const gridSetup = {
+        playerId: playerId,
+        playerName: playerName,
+        sizeX: 6,
+        sizeY: 12
+    };
+
+    console.log(`Enviando setupGrid a ${socket.id}:`, gridSetup);
+    socket.emit('setupGrid', JSON.stringify(gridSetup));
+  });
 
   socket.on('gameUpdate', (data) => {
     const parsed = typeof data === 'string' ? JSON.parse(data) : data;
@@ -69,6 +80,7 @@ io.on('connection', (socket) => {
       return; // no emitir updates si no hay Unity
     }
 
+    console.log(`Enviando updateGrid a sala ${roomId}`);
     io.to(roomId).emit('updateGrid', JSON.stringify(gridUpdate));
   });
 
