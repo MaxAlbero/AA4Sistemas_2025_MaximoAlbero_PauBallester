@@ -1,0 +1,12 @@
+USE `mydb`;
+
+CREATE TABLE IF NOT EXISTS GameStates (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id INT UNSIGNED NOT NULL,
+  tick BIGINT NOT NULL,
+  state_json JSON NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_room_tick (room_id, tick),
+  CONSTRAINT fk_gs_room FOREIGN KEY (room_id) REFERENCES Rooms(id)
+) ENGINE=InnoDB;
