@@ -87,7 +87,7 @@ io.on("connection", (socket) => {
   });
 
   // CREAR SALA
-  socket.on("CreateRoomRequest", (data) => {
+   socket.on("CreateRoomRequest", (data) => {
     const user = loggedUsers.get(socket.id);
     if (!user) {
       socket.emit("CreateRoomResponse", {
@@ -123,8 +123,8 @@ io.on("connection", (socket) => {
           status: "success"
         });
 
-        // Refrescar listado de salas para todos
-        emitRoomsToSocket(socket);
+        // Refrescar listado de salas para todos los clientes (cambio mínimo añadido)
+        io.sockets.sockets.forEach(s => emitRoomsToSocket(s));
       }
     );
   });

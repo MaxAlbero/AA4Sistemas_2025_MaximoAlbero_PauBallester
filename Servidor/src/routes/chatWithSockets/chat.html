@@ -17,10 +17,12 @@
             <button onclick="TryLogin()">Try Login</button>
         </div>
 
+        <!-- User info + Logout button (añadido) -->
         <div id="UserInfo" hidden>
-          <p id="LoggedUser"></p>
-          <button onclick="Logout()">Logout</button>
+            <p id="LoggedUser"></p>
+            <button id="LogoutBtn" onclick="Logout()">Logout</button>
         </div>
+
         <!-- Rooms UI -->
         <div id="RoomsContainer" hidden>
             <h3>Rooms</h3>
@@ -32,16 +34,18 @@
         </div>
 
         <div class="ChatContainer" id="ChatContainer" hidden>
-          <div class="ChatHeader">
-            <span id="CurrentRoomLabel"></span>
-            <button id="LeaveRoomBtn" class="LogoutButton" onclick="LeaveRoom()">Leave room</button>
-          </div>
-          <div id="MessagesContainer" class="MessagesContainer"></div>
-          <div class="InputContainer">
-            <div>Message Box: </div>
-            <input type="text" id="MessageInput" />
-            <button onclick="SendMessage()" class="MessageButton">Send</button>
-          </div>
+            <!-- Header de chat con Leave Room (añadido) -->
+            <div class="ChatHeader">
+                <span id="CurrentRoomLabel"></span>
+                <button id="LeaveRoomBtn" class="LogoutButton" onclick="LeaveRoom()">Leave room</button>
+            </div>
+
+            <div id="MessagesContainer" class ="MessagesContainer"></div>
+            <div class="InputContainer">
+                <div>Message Box: </div>
+                <input type="text" id="MessageInput"/>
+                <button onclick="SendMessage()" class="MessageButton">Send</button>
+            </div>
         </div>
     </body>
     
@@ -57,22 +61,23 @@
         var passwordField = document.getElementById("PasswordInput");
         var loginErrorMessage = document.getElementById("LoginErrorMessage");
 
+        var userInfo = document.getElementById("UserInfo");
+        var loggedUserLabel = document.getElementById("LoggedUser");
+
         var roomsContainer = document.getElementById("RoomsContainer");
         var roomNameInput = document.getElementById("RoomNameInput");
         var roomList = document.getElementById("RoomList");
 
         var chatContainer = document.getElementById("ChatContainer");
-        chatContainer.hidden = true;
+        var currentRoomLabel = document.getElementById("CurrentRoomLabel");
 
         var messageContainer = document.getElementById("MessagesContainer");
-
         var inputField = document.getElementById("MessageInput");
 
         var currentUser = { id: null, username: null };
         var currentRoomId = null;
 
         function CreateMessageWithData(messageData){
-            // Compatibilidad con diferentes shapes
             var text = messageData.text || messageData.content || "";
             var senderUsername = messageData.username || (messageData.user_id ? ("user#" + messageData.user_id) : "unknown");
 
@@ -148,6 +153,7 @@
             if(data.status === "success"){
                 currentRoomId = data.roomId;
                 chatContainer.hidden = false;
+                currentRoomLabel.textContent = "Room #" + currentRoomId;
                 socket.emit("ClientRequestMessageListToServer", { roomId: currentRoomId });
             }else{
                 alert(data.message || "Join room failed");
@@ -172,7 +178,7 @@
             }
         });
 
-        // Mensajes antiguos de la implementación inicial (lista global)
+        // Petición de mensajes global legacy
         socket.emit("ClientRequestMessageListToServer");
 
         function TryLogin(){
@@ -201,32 +207,49 @@
             currentUser.id = loginResponseData.id;
             currentUser.username = loginResponseData.username || usernameField.value;
 
+            loggedUserLabel.textContent = "Logged in as: " + currentUser.username;
+            userInfo.hidden = false;
+
             loginContainer.hidden = true;
             roomsContainer.hidden = false;
 
-            // El servidor envía ChatRoomsData al conectar y tras login
             console.log(loginResponseData);
         });
 
-        function Logout() {
-          // Si estás en una sala, abandónala
-          if (currentRoomId) {
-            socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
-          }
-          socket.emit("LogoutRequest", { userId: currentUserId });
-
-          // Reset UI
-          userInfo.hidden = true;
-          chatContainer.hidden = true;
-          roomsContainer.hidden = true;
-
-          loginContainer.hidden = false;
-          currentUserId = null;
-          currentRoomId = null;
-          currentRoomName = null;
-          usernameField.value = "";
-          passwordField.value = "";
-          messageContainer.innerHTML = "";
+        // Añadido: salir de la sala actual
+        function LeaveRoom() {
+            if (!currentRoomId) return;
+            socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUser.id }));
+            chatContainer.hidden = true;
+            currentRoomLabel.textContent = "";
+            currentRoomId = null;
+            messageContainer.innerHTML = "";
         }
+
+        // Añadido: logout del usuario
+        function Logout() {
+            // Si está en una sala, sale primero
+            if (currentRoomId) {
+                LeaveRoom();
+            }
+
+            // Evento opcional hacia servidor (si existe handler)
+            socket.emit("LogoutRequest", { userId: currentUser.id });
+
+            // Reset de UI y estado
+            userInfo.hidden = true;
+            chatContainer.hidden = true;
+            roomsContainer.hidden = true;
+
+            loginContainer.hidden = false;
+
+            currentUser.id = null;
+            currentUser.username = null;
+
+            usernameField.value = "";
+            passwordField.value = "";
+            messageContainer.innerHTML = "";
+        }
+
     </script>
 </html>
