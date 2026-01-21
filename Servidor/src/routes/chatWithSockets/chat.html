@@ -1,237 +1,207 @@
 <!DOCTYPE html>
-<html class="FullScreenObject">
-  <head>
-    <title>Chat En Clase</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
+<html class = FullScreenObject>
+    <head>
+        <title>Chat En Clase</title>
+        <link rel="stylesheet" href="/styles.css">
+    </head>
+    
+    <header></header>
+    
+    <body class = FullScreenObject>
+        <div id="LoginContainer">
+            <div>Username: </div>
+            <input type="text" id="UsernameInput"/>
+            <div>Password: </div>
+            <input type="password" id="PasswordInput"/>
+            <p id="LoginErrorMessage" class="ErrorMessage"></p>
+            <button onclick="TryLogin()">Try Login</button>
+        </div>
 
-  <header></header>
+        <!-- Rooms UI -->
+        <div id="RoomsContainer">
+            <h3>Rooms</h3>
+            <div>
+                <input type="text" id="RoomNameInput" placeholder="New room name"/>
+                <button onclick="CreateRoom()">Create Room</button>
+            </div>
+            <div id="RoomList"></div>
+        </div>
 
-  <body class="FullScreenObject">
-    <div id="LoginContainer">
-      <div>Username: </div>
-      <input type="text" id="UsernameInput" />
-      <div>Password: </div>
-      <input type="password" id="PasswordInput" />
-      <p id="LoginErrorMessage" class="ErrorMessage"></p>
-      <button onclick="TryLogin()">Try Login</button>
-    </div>
+        <div class="ChatContainer" id="ChatContainer">
+            <div id="MessagesContainer" class ="MessagesContainer">
 
-    <div id="UserInfo" hidden>
-      <p id="LoggedUser"></p>
-      <button onclick="Logout()">Logout</button>
-    </div>
+            </div>
+            <div class="InputContainer">
 
-    <div id="RoomsContainer" hidden>
-      <h3>Salas disponibles</h3>
-      <ul id="RoomsList"></ul>
-    </div>
+                <div>Message Box: </div>
+                <input type="text" id="MessageInput"/>
+                <button onclick="SendMessage()" class="MessageButton">Send</button>
+            </div>
+        </div>
+    </body>
+    
+    <footer></footer>
 
-    <div class="ChatContainer" id="ChatContainer" hidden>
-      <div class="ChatHeader">
-        <span id="CurrentRoomLabel"></span>
-        <button id="LeaveRoomBtn" class="LogoutButton" onclick="LeaveRoom()">Leave room</button>
-      </div>
-      <div id="MessagesContainer" class="MessagesContainer"></div>
-      <div class="InputContainer">
-        <div>Message Box: </div>
-        <input type="text" id="MessageInput" />
-        <button onclick="SendMessage()" class="MessageButton">Send</button>
-      </div>
-    </div>
-  </body>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
 
-  <footer></footer>
+        var socket = io();
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
+        var loginContainer = document.getElementById("LoginContainer");
+        var usernameField = document.getElementById("UsernameInput");
+        var passwordField = document.getElementById("PasswordInput");
+        var loginErrorMessage = document.getElementById("LoginErrorMessage");
 
-    // Referencias UI
-    const loginContainer = document.getElementById("LoginContainer");
-    const usernameField = document.getElementById("UsernameInput");
-    const passwordField = document.getElementById("PasswordInput");
-    const loginErrorMessage = document.getElementById("LoginErrorMessage");
+        var roomsContainer = document.getElementById("RoomsContainer");
+        var roomNameInput = document.getElementById("RoomNameInput");
+        var roomList = document.getElementById("RoomList");
 
-    const userInfo = document.getElementById("UserInfo");
-    const loggedUser = document.getElementById("LoggedUser");
+        var chatContainer = document.getElementById("ChatContainer");
+        chatContainer.hidden = true;
 
-    const roomsContainer = document.getElementById("RoomsContainer");
-    const roomsList = document.getElementById("RoomsList");
+        var messageContainer = document.getElementById("MessagesContainer");
 
-    const chatContainer = document.getElementById("ChatContainer");
-    const currentRoomLabel = document.getElementById("CurrentRoomLabel");
-    const messageContainer = document.getElementById("MessagesContainer");
-    const inputField = document.getElementById("MessageInput");
+        var inputField = document.getElementById("MessageInput");
 
-    // Estado
-    let currentUserId = null;
-    let currentRoomId = null;
-    let currentRoomName = null;
+        var currentUser = { id: null, username: null };
+        var currentRoomId = null;
 
-    socket.emit("registerClientType", "web");
+        function CreateMessageWithData(messageData){
+            // Compatibilidad con diferentes shapes
+            var text = messageData.text || messageData.content || "";
+            var senderUsername = messageData.username || (messageData.user_id ? ("user#" + messageData.user_id) : "unknown");
 
-    function TryLogin() {
-      loginErrorMessage.textContent = "";
+            var msgParagraph = document.createElement("p");
+            msgParagraph.textContent = senderUsername + ": " + text;
 
-      if (!usernameField.value || !passwordField.value) {
-        loginErrorMessage.textContent = "User or password is blank";
-        return;
-      }
-      const loginData = { username: usernameField.value, password: passwordField.value };
-      socket.emit("LoginRequest", loginData);
-    }
+            if(senderUsername === usernameField.value){
+                msgParagraph.classList.add("MyMessage");
+            }else {
+                msgParagraph.classList.add("OthersMessage");
+            }
 
-    socket.on("LoginResponse", (loginResponseData) => {
-      const isSuccess =
-        loginResponseData &&
-        (loginResponseData.status === "success" || loginResponseData.statues === "success");
+            messageContainer.appendChild(msgParagraph);
+        }
 
-      if (!isSuccess) {
-        const errorMessage = (loginResponseData && loginResponseData.message) || "Unknown";
-        loginErrorMessage.textContent = errorMessage;
-        return;
-      }
+        socket.on("ServerMessageToClient", (messageData) => {
+            CreateMessageWithData(messageData);
+        });
 
-      currentUserId = loginResponseData.id;
-      loggedUser.textContent = `Usuario: ${usernameField.value} (id: ${currentUserId})`;
+        socket.on("ServerResponseRequestMessageListToClient", (msgDataList) => {
+            messageContainer.textContent = "";
+            for(messageData of msgDataList){
+                CreateMessageWithData(messageData);
+            }
+        });
 
-      userInfo.hidden = false;
-      loginContainer.hidden = true;
+        function SendMessage(){
+            if(!currentRoomId){
+                alert("Join a room first.");
+                return;
+            }
+            if(inputField.value){
+                var text = inputField.value;
+                var messageData = {
+                    roomId: currentRoomId,
+                    content: text
+                };
+                socket.emit("ClientMessageToServer", messageData);
+                inputField.value = "";
+            }
+        }
 
-      // Mostrar selector de salas y pedir listado
-      roomsContainer.hidden = false;
-      chatContainer.hidden = true;
-      socket.emit("requestRooms");
-    });
+        // Rooms rendering
+        socket.on("ChatRoomsData", (rooms) => {
+            roomList.textContent = "";
+            if(!rooms || rooms.length === 0){
+                var p = document.createElement("p");
+                p.textContent = "No rooms available.";
+                roomList.appendChild(p);
+                return;
+            }
 
-    socket.on("roomsInfo", (rooms) => {
-      // Si ya está en una sala, no mostrar listado
-      if (currentRoomId) {
-        roomsContainer.hidden = true;
-        return;
-      }
-      roomsList.innerHTML = "";
-      rooms.forEach((r) => {
-        const li = document.createElement("li");
-        li.textContent = `${r.name} (id=${r.id})`;
+            var ul = document.createElement("ul");
+            rooms.forEach(r => {
+                var li = document.createElement("li");
+                li.textContent = `#${r.id} - ${r.name}`;
+                
+                var btn = document.createElement("button");
+                btn.textContent = "Join";
+                btn.onclick = () => JoinRoom(r.id);
 
-        const btn = document.createElement("button");
-        btn.textContent = "Join";
-        btn.onclick = () => joinRoom(r.id, r.name);
+                li.appendChild(btn);
+                ul.appendChild(li);
+            });
+            roomList.appendChild(ul);
+        });
 
-        li.appendChild(btn);
-        roomsList.appendChild(li);
-      });
-    });
+        function JoinRoom(roomId){
+            socket.emit("JoinRoomRequest", { roomId: roomId });
+        }
 
-    function joinRoom(roomId, roomName) {
-      currentRoomId = roomId;
-      currentRoomName = roomName;
+        socket.on("JoinRoomResponse", (data) => {
+            if(data.status === "success"){
+                currentRoomId = data.roomId;
+                chatContainer.hidden = false;
+                socket.emit("ClientRequestMessageListToServer", { roomId: currentRoomId });
+            }else{
+                alert(data.message || "Join room failed");
+            }
+        });
 
-      socket.emit(
-        "joinRoom",
-        JSON.stringify({
-          roomId: roomId,
-          playerId: currentUserId,
-          playerName: usernameField.value,
-        })
-      );
+        function CreateRoom(){
+            var name = (roomNameInput.value || "").trim();
+            if(!name){
+                alert("Room name is required");
+                return;
+            }
+            socket.emit("CreateRoomRequest", { name: name });
+        }
 
-      // Oculta selector de salas cuando ya estás en una
-      roomsContainer.hidden = true;
+        socket.on("CreateRoomResponse", (res) => {
+            if(res.status === "success"){
+                roomNameInput.value = "";
+                // El servidor emitirá ChatRoomsData con el listado actualizado
+            }else{
+                alert(res.message || "Create room failed");
+            }
+        });
 
-      // Cargar histórico de esta sala y mostrar chat
-      currentRoomLabel.textContent = `Room: ${currentRoomName} (id=${currentRoomId})`;
-      messageContainer.innerHTML = "";
-      socket.emit("ClientRequestMessageListToServer", JSON.stringify({ roomId }));
-      chatContainer.hidden = false;
-      inputField.focus();
-    }
+        // Mensajes antiguos de la implementación inicial (lista global)
+        socket.emit("ClientRequestMessageListToServer");
 
-    function LeaveRoom() {
-      if (!currentRoomId) return;
-      socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
-      currentRoomId = null;
-      currentRoomName = null;
+        function TryLogin(){
+            loginErrorMessage.textContent = "";
 
-      // Limpiar UI de chat y volver al listado de salas
-      currentRoomLabel.textContent = "";
-      messageContainer.innerHTML = "";
-      chatContainer.hidden = true;
+            if(usernameField.value == "" || passwordField.value == ""){
+                loginErrorMessage.textContent = "User or password is blank";
+            }
 
-      // Mostrar de nuevo el selector de salas sin desloguear
-      roomsContainer.hidden = false;
-      socket.emit("requestRooms");
-    }
+            var loginData = {
+                username: usernameField.value,
+                password: passwordField.value
+            };
 
-    function Logout() {
-      // Si estás en una sala, abandónala
-      if (currentRoomId) {
-        socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
-      }
-      socket.emit("LogoutRequest", { userId: currentUserId });
+            socket.emit("LoginRequest", loginData);
+        }
 
-      // Reset UI
-      userInfo.hidden = true;
-      chatContainer.hidden = true;
-      roomsContainer.hidden = true;
+        socket.on("LoginResponse", (loginResponseData) => {
+            
+            if(loginResponseData.status == "error"){
+                var errorMessage = loginResponseData.message || "Unknown";
+                loginErrorMessage.textContent = errorMessage;
+                return;
+            }
 
-      loginContainer.hidden = false;
-      currentUserId = null;
-      currentRoomId = null;
-      currentRoomName = null;
-      usernameField.value = "";
-      passwordField.value = "";
-      messageContainer.innerHTML = "";
-    }
+            currentUser.id = loginResponseData.id;
+            currentUser.username = loginResponseData.username || usernameField.value;
 
-    function SendMessage() {
-      const text = inputField.value && inputField.value.trim();
-      if (!text || !currentRoomId || !currentUserId) return;
+            loginContainer.hidden = true;
+            roomsContainer.hidden = false;
 
-      const messageData = {
-        userId: currentUserId,
-        roomId: currentRoomId,
-        username: usernameField.value,
-        text: text,
-      };
+            // El servidor envía ChatRoomsData al conectar y tras login
+            console.log(loginResponseData);
+        });
 
-      socket.emit("ClientMessageToServer", JSON.stringify(messageData));
-      inputField.value = "";
-      inputField.focus();
-    }
-
-    function CreateMessageWithData(messageData) {
-      const msgParagraph = document.createElement("p");
-      msgParagraph.textContent = `${messageData.username}: ${messageData.text}`;
-
-      if (messageData.username === usernameField.value) {
-        msgParagraph.classList.add("MyMessage");
-      } else {
-        msgParagraph.classList.add("OthersMessage");
-      }
-
-      messageContainer.appendChild(msgParagraph);
-      messageContainer.scrollTop = messageContainer.scrollHeight;
-    }
-
-    socket.on("ServerMessageToClient", (messageData) => {
-      // Ignorar mensajes de otras salas
-      if (messageData.roomId && currentRoomId && messageData.roomId !== currentRoomId) return;
-      CreateMessageWithData(messageData);
-    });
-
-    socket.on("ServerResponseRequestMessageListToClient", (msgDataList) => {
-      messageContainer.innerHTML = "";
-      for (const messageData of msgDataList) {
-        CreateMessageWithData(messageData);
-      }
-    });
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") SendMessage();
-      if (e.key === "Escape") LeaveRoom(); // ahora ESC solo sale de la sala
-    });
-  </script>
+    </script>
 </html>
