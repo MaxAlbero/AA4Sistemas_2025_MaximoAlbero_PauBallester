@@ -2,8 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
-using TMPro; // Si usas TextMeshPro, si no, usa UnityEngine.UI para Text
 
 public class NodeGrid : MonoBehaviour
 {
@@ -89,239 +87,157 @@ public class NodeGrid : MonoBehaviour
         public int sizeY;
     }
 
-    // === CONFIGURACIÓN PARA MÚLTIPLES GRIDS ===
-    [Header("ScrollView Settings")]
-    [SerializeField] private Transform scrollViewContent; // El "Content" del ScrollView
-    [SerializeField] private GameObject gridPanelPrefab; // Prefab que contiene todo el panel de un jugador
-
-    [Header("Node Settings")]
-    [SerializeField] private GameObject nodePrefab; // Prefab para cada celda individual
-
-    // Diccionario para gestionar múltiples grids (una por jugador)
-    private Dictionary<int, PlayerGridData> playerGrids = new Dictionary<int, PlayerGridData>();
-
-    // Clase helper para almacenar datos de cada jugador
-    private class PlayerGridData
-    {
-        public Grid grid;
-        public GameObject panelObject;
-        public Transform gridContainer;
-        public Dictionary<Vector2Int, GameObject> visualNodes;
-        public TextMeshProUGUI playerNameText; // O usa "Text" si no usas TMP
-
-        public PlayerGridData()
-        {
-            visualNodes = new Dictionary<Vector2Int, GameObject>();
-        }
-    }
+    private Grid _grid;
 
     public void SetupGrid(GridSetup gridSetup)
     {
-        // Si ya existe una grid para este jugador, la eliminamos primero
-        if (playerGrids.ContainsKey(gridSetup.playerId))
+        // Limpia cualquier grid previa en la jerarquía
+        var toDestroy = new List<GameObject>();
+        foreach (Transform child in transform)
+            toDestroy.Add(child.gameObject);
+        foreach (var go in toDestroy)
+            Destroy(go);
+
+        // Crea el modelo de datos
+        _grid = new Grid(gridSetup);
+
+        // Parámetros visuales simples (sin añadir campos a la clase)
+        float cellSize = 1f;
+        float padding = 0.05f;
+        float visualSize = cellSize - padding;
+
+        // Función local para mapear tipo->color
+        Color ColorFor(Node.JewelType t)
         {
-            RemovePlayerGrid(gridSetup.playerId);
-        }
-
-        // Crear el modelo de datos
-        Grid newGrid = new Grid(gridSetup);
-
-        // Crear el panel visual para este jugador
-        GameObject panelObj = Instantiate(gridPanelPrefab, scrollViewContent);
-        panelObj.name = $"GridPanel_Player_{gridSetup.playerId}_{gridSetup.playerName}";
-
-        // Buscar los componentes dentro del prefab
-        Transform gridContainer = panelObj.transform.Find("GridContainer");
-        TextMeshProUGUI nameText = panelObj.GetComponentInChildren<TextMeshProUGUI>();
-        // Si usas Text normal: Text nameText = panelObj.GetComponentInChildren<Text>();
-
-        if (nameText != null)
-        {
-            nameText.text = $"{gridSetup.playerName} (ID: {gridSetup.playerId})";
-        }
-
-        // Crear estructura de datos para este jugador
-        PlayerGridData playerData = new PlayerGridData
-        {
-            grid = newGrid,
-            panelObject = panelObj,
-            gridContainer = gridContainer,
-            playerNameText = nameText
-        };
-
-        // Configurar GridLayoutGroup
-        if (gridContainer != null)
-        {
-            GridLayoutGroup gridLayout = gridContainer.GetComponent<GridLayoutGroup>();
-            if (gridLayout != null)
+            switch (t)
             {
-                gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-                gridLayout.constraintCount = gridSetup.sizeX;
+                case Node.JewelType.Red: return Color.red;
+                case Node.JewelType.Green: return Color.green;
+                case Node.JewelType.Blue: return Color.blue;
+                case Node.JewelType.Yellow: return Color.yellow;
+                case Node.JewelType.Orange: return new Color(1f, 0.5f, 0f);
+                case Node.JewelType.Purple: return new Color(0.6f, 0.2f, 0.8f);
+                case Node.JewelType.Shiny: return Color.white;
+                default: return new Color(0.15f, 0.15f, 0.15f, 1f);
             }
-
-            // Crear nodos visuales
-            CreateVisualGrid(playerData, gridSetup.sizeX, gridSetup.sizeY);
         }
 
-        // Guardar en el diccionario
-        playerGrids[gridSetup.playerId] = playerData;
+        // Crea visualización: un Quad por celda con nombre único Node_x_y
+        // Se colocan como hijos directos de este componente para poder localizarlos con Transform.Find
+        for (int x = 0; x < _grid.columns.Count; x++)
+        {
+            for (int y = 0; y < _grid.columns[x].nodes.Count; y++)
+            {
+                var nodeGo = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                nodeGo.name = $"Node_{x}_{y}";
+                nodeGo.transform.SetParent(this.transform, false);
+                nodeGo.transform.localScale = new Vector3(visualSize, visualSize, 1f);
 
-        Debug.Log($"Grid creada para {gridSetup.playerName} (ID: {gridSetup.playerId}): {gridSetup.sizeX}x{gridSetup.sizeY}");
+                // Distribución en plano X-Y, con Y invertida para que (0,0) quede arriba-izquierda visualmente
+                nodeGo.transform.localPosition = new Vector3(x * cellSize, -y * cellSize, 0f);
+
+                var rend = nodeGo.GetComponent<Renderer>();
+                rend.material.color = ColorFor(Node.JewelType.None);
+            }
+        }
+
+        // Centrar mínimamente la grid respecto al origen (opcional)
+        float width = _grid.columns.Count * cellSize;
+        float height = (_grid.columns.Count > 0 ? _grid.columns[0].nodes.Count : 0) * cellSize;
+        this.transform.localPosition = new Vector3(-0.5f * (width - cellSize), 0.5f * (height - cellSize), 0f);
+
+        Debug.Log($"[NodeGrid] Grid setup {gridSetup.sizeX}x{gridSetup.sizeY} for {gridSetup.playerName} ({gridSetup.playerId})");
     }
 
     public void UpdateGrid(GridUpdate gridUpdate)
     {
-        if (!playerGrids.ContainsKey(gridUpdate.playerId))
+        if (_grid == null)
         {
-            Debug.LogError($"No existe grid para el jugador ID: {gridUpdate.playerId}. Llama a SetupGrid primero.");
+            Debug.LogWarning("[NodeGrid] UpdateGrid llamado antes de SetupGrid");
             return;
         }
+        if (gridUpdate?.updatedNodes == null || gridUpdate.updatedNodes.Count == 0)
+            return;
 
-        PlayerGridData playerData = playerGrids[gridUpdate.playerId];
-
-        // Actualizar los nodos en el modelo de datos y la visualización
-        foreach (Node node in gridUpdate.updatedNodes)
+        // Función local para mapear tipo->color (duplicada para no añadir miembros)
+        Color ColorFor(Node.JewelType t)
         {
-            if (node.x >= 0 && node.x < playerData.grid.columns.Count &&
-                node.y >= 0 && node.y < playerData.grid.columns[node.x].nodes.Count)
+            switch (t)
             {
-                playerData.grid.GetNode(node.x, node.y).type = node.type;
-                UpdateVisualNode(playerData, node.x, node.y, node.type);
+                case Node.JewelType.Red: return Color.red;
+                case Node.JewelType.Green: return Color.green;
+                case Node.JewelType.Blue: return Color.blue;
+                case Node.JewelType.Yellow: return Color.yellow;
+                case Node.JewelType.Orange: return new Color(1f, 0.5f, 0f);
+                case Node.JewelType.Purple: return new Color(0.6f, 0.2f, 0.8f);
+                case Node.JewelType.Shiny: return Color.white;
+                default: return new Color(0.15f, 0.15f, 0.15f, 1f);
             }
         }
 
-        Debug.Log($"Grid actualizada para jugador ID {gridUpdate.playerId}: {gridUpdate.updatedNodes.Count} nodos cambiados");
-    }
-
-    // Método adicional para eliminar la grid de un jugador (cuando salga de la sala)
-    public void RemovePlayerGrid(int playerId)
-    {
-        if (playerGrids.ContainsKey(playerId))
+        // Aplica al modelo y a la vista
+        foreach (var n in gridUpdate.updatedNodes)
         {
-            Destroy(playerGrids[playerId].panelObject);
-            playerGrids.Remove(playerId);
-            Debug.Log($"Grid del jugador ID {playerId} eliminada");
-        }
-    }
-
-    // Método para limpiar todas las grids (cuando salgas de una sala)
-    public void ClearAllGrids()
-    {
-        foreach (var kvp in playerGrids)
-        {
-            if (kvp.Value.panelObject != null)
-                Destroy(kvp.Value.panelObject);
-        }
-        playerGrids.Clear();
-        Debug.Log("Todas las grids eliminadas");
-    }
-
-    private void CreateVisualGrid(PlayerGridData playerData, int sizeX, int sizeY)
-    {
-        if (playerData.gridContainer == null || nodePrefab == null)
-        {
-            Debug.LogWarning("GridContainer o NodePrefab no asignado");
-            return;
-        }
-
-        // Crear nodos visuales (invertido en Y para que 0,0 esté abajo)
-        for (int y = sizeY - 1; y >= 0; y--)
-        {
-            for (int x = 0; x < sizeX; x++)
+            // Actualiza el modelo interno
+            try
             {
-                GameObject nodeObj = Instantiate(nodePrefab, playerData.gridContainer);
-                nodeObj.name = $"Node_{x}_{y}";
+                var node = _grid.GetNode(n.x, n.y);
+                node.type = n.type;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[NodeGrid] Update fuera de rango ({n.x},{n.y}): {e.Message}");
+                continue;
+            }
 
-                Vector2Int pos = new Vector2Int(x, y);
-                playerData.visualNodes[pos] = nodeObj;
-
-                // Inicializar como vacío
-                UpdateVisualNode(playerData, x, y, Node.JewelType.None);
+            // Busca el visual por nombre y actualiza su color
+            var t = transform.Find($"Node_{n.x}_{n.y}");
+            if (t != null)
+            {
+                var rend = t.GetComponent<Renderer>();
+                if (rend != null) rend.material.color = ColorFor(n.type);
+            }
+            else
+            {
+                Debug.LogWarning($"[NodeGrid] No se encontró visual para Node_{n.x}_{n.y}");
             }
         }
     }
 
-    private void UpdateVisualNode(PlayerGridData playerData, int x, int y, Node.JewelType type)
+    private void Start()
     {
-        Vector2Int pos = new Vector2Int(x, y);
+        //The code shown below is an example of how to convert GridUpdate objects to JSON and vice versa.
 
-        if (!playerData.visualNodes.ContainsKey(pos))
+        SetupGrid(new()
         {
-            Debug.LogWarning($"Nodo visual no encontrado en posición ({x}, {y})");
-            return;
-        }
+            playerId = 0,
+            playerName = "P1",
+            sizeX = 6,
+            sizeY = 12
+        });
 
-        GameObject nodeObj = playerData.visualNodes[pos];
+        string json = JsonUtility.ToJson(_grid);
 
-        // Actualizar el color según el tipo de joya
-        Image nodeImage = nodeObj.GetComponent<Image>();
-        if (nodeImage != null)
+        Debug.Log(json);
+
+        Grid g = JsonUtility.FromJson<Grid>(json);
+
+        GridUpdate update = new()
         {
-            nodeImage.color = GetColorForJewelType(type);
-        }
+            playerId = 0,
+            playerName = "P1",
+            updatedNodes = new()
+        };
+
+        update.updatedNodes.Add(new Node(Node.JewelType.Red, 0, 1));
+        update.updatedNodes.Add(new Node(Node.JewelType.Green, 0, 2));
+        update.updatedNodes.Add(new Node(Node.JewelType.Blue, 0, 3));
+        update.updatedNodes.Add(new Node(Node.JewelType.None, 0, 4));
+
+        string json2 = JsonUtility.ToJson(update);
+
+        Debug.Log(json2);
+
+        GridUpdate update2 = JsonUtility.FromJson<GridUpdate>(json2);
     }
-
-    private Color GetColorForJewelType(Node.JewelType type)
-    {
-        switch (type)
-        {
-            case Node.JewelType.None:
-                return new Color(0.2f, 0.2f, 0.2f, 0.5f);
-            case Node.JewelType.Red:
-                return Color.red;
-            case Node.JewelType.Green:
-                return Color.green;
-            case Node.JewelType.Blue:
-                return Color.blue;
-            case Node.JewelType.Yellow:
-                return Color.yellow;
-            case Node.JewelType.Orange:
-                return new Color(1f, 0.5f, 0f);
-            case Node.JewelType.Purple:
-                return new Color(0.5f, 0f, 1f);
-            case Node.JewelType.Shiny:
-                return Color.white;
-            default:
-                return Color.gray;
-        }
-    }
-
-
-
-    //private void Start()
-    //{
-    //    The code shown below is an example of how to convert GridUpdate objects to JSON and vice versa.
-
-    //    SetupGrid(new()
-    //    {
-    //        playerId = 0,
-    //        playerName = "P1",
-    //        sizeX = 6,
-    //        sizeY = 12
-    //    });
-
-    //    string json = JsonUtility.ToJson(_grid);
-
-    //    Debug.Log(json);
-
-    //    Grid g = JsonUtility.FromJson<Grid>(json);
-
-    //    GridUpdate update = new()
-    //    {
-    //        playerId = 0,
-    //        playerName = "P1",
-    //        updatedNodes = new()
-    //    };
-
-    //    update.updatedNodes.Add(new Node(Node.JewelType.Red, 0, 1));
-    //    update.updatedNodes.Add(new Node(Node.JewelType.Green, 0, 2));
-    //    update.updatedNodes.Add(new Node(Node.JewelType.Blue, 0, 3));
-    //    update.updatedNodes.Add(new Node(Node.JewelType.None, 0, 4));
-
-    //    string json2 = JsonUtility.ToJson(update);
-
-    //    Debug.Log(json2);
-
-    //    GridUpdate update2 = JsonUtility.FromJson<GridUpdate>(json2);
-    //}
 }
