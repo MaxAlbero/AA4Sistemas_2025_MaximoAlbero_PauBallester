@@ -17,8 +17,12 @@
             <button onclick="TryLogin()">Try Login</button>
         </div>
 
+        <div id="UserInfo" hidden>
+          <p id="LoggedUser"></p>
+          <button onclick="Logout()">Logout</button>
+        </div>
         <!-- Rooms UI -->
-        <div id="RoomsContainer">
+        <div id="RoomsContainer" hidden>
             <h3>Rooms</h3>
             <div>
                 <input type="text" id="RoomNameInput" placeholder="New room name"/>
@@ -27,16 +31,17 @@
             <div id="RoomList"></div>
         </div>
 
-        <div class="ChatContainer" id="ChatContainer">
-            <div id="MessagesContainer" class ="MessagesContainer">
-
-            </div>
-            <div class="InputContainer">
-
-                <div>Message Box: </div>
-                <input type="text" id="MessageInput"/>
-                <button onclick="SendMessage()" class="MessageButton">Send</button>
-            </div>
+        <div class="ChatContainer" id="ChatContainer" hidden>
+          <div class="ChatHeader">
+            <span id="CurrentRoomLabel"></span>
+            <button id="LeaveRoomBtn" class="LogoutButton" onclick="LeaveRoom()">Leave room</button>
+          </div>
+          <div id="MessagesContainer" class="MessagesContainer"></div>
+          <div class="InputContainer">
+            <div>Message Box: </div>
+            <input type="text" id="MessageInput" />
+            <button onclick="SendMessage()" class="MessageButton">Send</button>
+          </div>
         </div>
     </body>
     
@@ -203,5 +208,25 @@
             console.log(loginResponseData);
         });
 
+        function Logout() {
+          // Si estás en una sala, abandónala
+          if (currentRoomId) {
+            socket.emit("leaveRoom", JSON.stringify({ roomId: currentRoomId, playerId: currentUserId }));
+          }
+          socket.emit("LogoutRequest", { userId: currentUserId });
+
+          // Reset UI
+          userInfo.hidden = true;
+          chatContainer.hidden = true;
+          roomsContainer.hidden = true;
+
+          loginContainer.hidden = false;
+          currentUserId = null;
+          currentRoomId = null;
+          currentRoomName = null;
+          usernameField.value = "";
+          passwordField.value = "";
+          messageContainer.innerHTML = "";
+        }
     </script>
 </html>
