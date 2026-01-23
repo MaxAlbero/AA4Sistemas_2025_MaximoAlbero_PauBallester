@@ -179,8 +179,9 @@
         });
 
         // Petición de mensajes global legacy
-        socket.emit("ClientRequestMessageListToServer");
-
+        if (typeof currentRoomId === 'number' && currentRoomId > 0) {
+            socket.emit("ClientRequestMessageListToServer", { roomId: currentRoomId });
+        }
         function TryLogin(){
             loginErrorMessage.textContent = "";
 

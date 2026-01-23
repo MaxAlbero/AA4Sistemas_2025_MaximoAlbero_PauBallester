@@ -212,14 +212,24 @@ io.on("connection", (socket) => {
 
   // SOLICITAR LISTA DE MENSAJES
   socket.on("ClientRequestMessageListToServer", (data) => {
-    const { roomId } = data || {};
+    // Parseo robusto: string -> JSON, array -> primer elemento, objeto -> tal cual
+    let obj = data;
+    try {
+      if (typeof obj === "string") obj = JSON.parse(obj);
+      if (Array.isArray(obj)) obj = obj[0] || {};
+    } catch (e) {
+      obj = {};
+    }
+
+    const roomId = Number(obj && obj.roomId);
     if (!roomId) {
+      // No llamar al procedure si falta roomId
       socket.emit("ServerResponseRequestMessageListToClient", []);
       return;
     }
 
     bddConnection.query(
-      `CALL ${PROC.GET_ROOM_MESSAGES}(?);`,
+      "CALL " + PROC.GET_ROOM_MESSAGES + "(?);",
       [roomId],
       (err, results) => {
         if (err) {
@@ -228,14 +238,9 @@ io.on("connection", (socket) => {
           return;
         }
         const rows = results[0] || [];
-        
-        // Formatear mensajes sin IDs
-        const formattedMessages = rows.map(msg => ({
-          username: msg.username,
-          text: msg.text,
-          createDate: msg.createDate
-        }));
-        
+        const formattedMessages = rows.map(function (msg) {
+          return { username: msg.username, text: msg.text, createDate: msg.createDate };
+        });
         socket.emit("ServerResponseRequestMessageListToClient", formattedMessages);
       }
     );
