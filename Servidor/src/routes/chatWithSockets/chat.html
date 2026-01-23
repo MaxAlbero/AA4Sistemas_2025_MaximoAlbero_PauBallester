@@ -154,6 +154,7 @@
                 currentRoomId = data.roomId;
                 chatContainer.hidden = false;
                 currentRoomLabel.textContent = "Room #" + currentRoomId;
+                // CORRECTO: ahora sí pedimos mensajes con roomId
                 socket.emit("ClientRequestMessageListToServer", { roomId: currentRoomId });
             }else{
                 alert(data.message || "Join room failed");
@@ -178,10 +179,9 @@
             }
         });
 
-        // Petición de mensajes global legacy
-        if (typeof currentRoomId === 'number' && currentRoomId > 0) {
-            socket.emit("ClientRequestMessageListToServer", { roomId: currentRoomId });
-        }
+        // Eliminar emisión legacy sin roomId:
+        // socket.emit("ClientRequestMessageListToServer");
+
         function TryLogin(){
             loginErrorMessage.textContent = "";
 
