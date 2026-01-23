@@ -1,0 +1,144 @@
+const crypto = require("crypto");
+
+// Mapeo con NodeGrid.Node.JewelType
+const Jewel = {
+  None: 0,
+  Red: 1,
+  Green: 2,
+  Blue: 3,
+  Yellow: 4,
+  Orange: 5,
+  Purple: 6,
+  Shiny: 7,
+};
+const JEWELS = [Jewel.Red, Jewel.Green, Jewel.Blue, Jewel.Yellow, Jewel.Orange, Jewel.Purple];
+
+class ColumnsEngine {
+  constructor({ sizeX = 6, sizeY = 12, tickMs = 500, seed = null }) {
+    this.sizeX = sizeX;
+    this.sizeY = sizeY;
+    this.tickMs = tickMs;
+    this.seed = seed || crypto.randomBytes(8).toString("hex");
+    this._rng = this._mulberry32(this._hashSeed(this.seed));
+    this.grid = this._createEmptyGrid();
+    this._interval = null;
+
+    // Estado de replay
+    this.replay = {
+      id: null,                // se asigna al crear en BDD
+      seq: 0,                  // contador de eventos
+      onRecord: null,          // function({type, payload, seq})
+    };
+
+    // Callbacks de broadcasting
+    this.onSetup = null;       // function(setupGridObj)
+    this.onUpdate = null;      // function(gridUpdateObj)
+    this.onEnd = null;         // function()
+  }
+
+  _hashSeed(seed) {
+    return seed.split("").reduce((a, c) => (a + c.charCodeAt(0)) >>> 0, 0) || 1;
+  }
+  _mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  _createEmptyGrid() {
+    const g = [];
+    for (let x = 0; x < this.sizeX; x++) {
+      const col = [];
+      for (let y = 0; y < this.sizeY; y++) col.push(Jewel.None);
+      g.push(col);
+    }
+    return g;
+  }
+
+  getSetupGrid({ playerId = 0, playerName = "P1" } = {}) {
+    return {
+      playerId,
+      playerName,
+      sizeX: this.sizeX,
+      sizeY: this.sizeY,
+    };
+  }
+
+  // Ejemplo simplificado de "step": cae un bloque y limpia tríos verticales
+  step() {
+    // Generar una caída simple en una columna aleatoria
+    const col = Math.floor(this._rng() * this.sizeX);
+    // Buscar desde abajo hacia arriba la primera celda vacía
+    for (let y = this.sizeY - 1; y >= 0; y--) {
+      if (this.grid[col][y] === Jewel.None) {
+        this.grid[col][y] = JEWELS[Math.floor(this._rng() * JEWELS.length)];
+        break;
+      }
+    }
+
+    // Limpiar tríos verticales (Columns) muy básico
+    const toClear = [];
+    for (let x = 0; x < this.sizeX; x++) {
+      for (let y = 0; y <= this.sizeY - 3; y++) {
+        const a = this.grid[x][y], b = this.grid[x][y + 1], c = this.grid[x][y + 2];
+        if (a !== Jewel.None && a === b && b === c) {
+          toClear.push({ x, y }, { x, y: y + 1 }, { x, y: y + 2 });
+        }
+      }
+    }
+    toClear.forEach(({ x, y }) => this.grid[x][y] = Jewel.None);
+
+    // Compactar columna (caída tras clear)
+    for (let x = 0; x < this.sizeX; x++) {
+      const stack = this.grid[x].filter(v => v !== Jewel.None);
+      while (stack.length < this.sizeY) stack.unshift(Jewel.None);
+      this.grid[x] = stack;
+    }
+
+    // Construir updates incrementales: para demo, incluimos toda la columna cambiada y clears
+    const updatedNodes = [];
+    for (let y = 0; y < this.sizeY; y++) {
+      updatedNodes.push({ type: this.grid[col][y], x: col, y });
+    }
+    toClear.forEach(({ x, y }) => updatedNodes.push({ type: Jewel.None, x, y }));
+
+    return {
+      playerId: 0,
+      playerName: "P1",
+      updatedNodes,
+    };
+  }
+
+  start() {
+    // Emitir setup inicial
+    const setup = this.getSetupGrid();
+    if (this.onSetup) this.onSetup(setup);
+    this._record("GRID_SETUP", setup);
+
+    // Bucle de juego
+    this._interval = setInterval(() => {
+      const update = this.step();
+      if (this.onUpdate) this.onUpdate(update);
+      this._record("GRID_UPDATE", update);
+    }, this.tickMs);
+  }
+
+  stop() {
+    if (this._interval) {
+      clearInterval(this._interval);
+      this._interval = null;
+    }
+    if (this.onEnd) this.onEnd();
+  }
+
+  _record(type, payload) {
+    if (!this.replay || !this.replay.onRecord) return;
+    this.replay.seq++;
+    this.replay.onRecord({ type, payload, seq: this.replay.seq });
+  }
+}
+
+module.exports = { ColumnsEngine, Jewel };

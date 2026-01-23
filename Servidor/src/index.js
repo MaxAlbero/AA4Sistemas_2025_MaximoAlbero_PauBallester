@@ -33,6 +33,8 @@ app.set("io", io);
 const bddConnection = require("./bddSetup");
 app.set("bdd", bddConnection);
 
+require("./routes/gameSockets");
+
 const roomState = new Map(); // roomId -> { unityCount: number, paused: boolean }
 
 io.on('connection', (socket) => {
