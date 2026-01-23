@@ -44,34 +44,22 @@ io.on("connection", (socket) => {
       address.remotePort
   );
 
-   // LOGIN - parseo robusto de argumentos múltiples u objeto
+  // LOGIN: admite 2 args (user, pass) o objeto/array
   socket.on("LoginRequest", (arg1, arg2) => {
-    console.log("[LoginRequest] raw arg1 typeof=", typeof arg1, "value=", arg1, "arg2 typeof=", typeof arg2, "value=", arg2);
-
     let username = "";
     let password = "";
 
-    // Forma 1: dos argumentos simples (strings) enviados por el cliente C#
     if (typeof arg1 === "string" && typeof arg2 === "string") {
       username = arg1.trim();
       password = arg2.trim();
     } else {
-      // Forma 2: objeto/array/string JSON como antes
       let dataObj = arg1;
       try {
-        if (typeof dataObj === "string") {
-          dataObj = JSON.parse(dataObj);
-        }
-        if (Array.isArray(dataObj)) {
-          // Algunos clientes envuelven el objeto como primer elemento del array
-          dataObj = dataObj[0] || {};
-        }
-      } catch (e) {
-        console.warn("LoginRequest payload parse warning:", e);
+        if (typeof dataObj === "string") dataObj = JSON.parse(dataObj);
+        if (Array.isArray(dataObj)) dataObj = dataObj[0] || {};
+      } catch {
         dataObj = {};
       }
-
-      // Extraer username/password admitiendo strings o arrays con primer elemento
       if (dataObj) {
         if (Array.isArray(dataObj.username)) {
           username = String((dataObj.username[0] || "").trim());
@@ -86,10 +74,7 @@ io.on("connection", (socket) => {
       }
     }
 
-    console.log("[LoginRequest] parsed username='" + username + "' password='(hidden)'");
-
     const loginResponseData = {};
-
     if (!username || !password) {
       loginResponseData.status = "error";
       loginResponseData.message = "User or password is blank";
@@ -109,7 +94,6 @@ io.on("connection", (socket) => {
         }
 
         if (!result || result.length <= 0) {
-          console.log("User or password incorrecta");
           loginResponseData.status = "error";
           loginResponseData.message = "User or password Incorrect";
           socket.emit("LoginResponse", loginResponseData);
@@ -123,7 +107,6 @@ io.on("connection", (socket) => {
         loginResponseData.id = user.id;
         loginResponseData.username = user.username;
         socket.emit("LoginResponse", loginResponseData);
-        console.log("Usuario logueado:", user.username);
 
         emitRoomsToSocket(socket);
       }
@@ -131,7 +114,7 @@ io.on("connection", (socket) => {
   });
 
   // CREAR SALA
-   socket.on("CreateRoomRequest", (data) => {
+  socket.on("CreateRoomRequest", (data) => {
     const user = loggedUsers.get(socket.id);
     if (!user) {
       socket.emit("CreateRoomResponse", {
@@ -153,7 +136,7 @@ io.on("connection", (socket) => {
     bddConnection.query(
       `CALL ${PROC.CREATE_ROOM}(?);`,
       [name.trim()],
-      (err, results) => {
+      (err) => {
         if (err) {
           console.error("Error calling CreateRoom:", err);
           socket.emit("CreateRoomResponse", {
@@ -163,24 +146,52 @@ io.on("connection", (socket) => {
           return;
         }
 
-        socket.emit("CreateRoomResponse", {
-          status: "success"
-        });
-
-        // Refrescar listado de salas para todos los clientes (cambio mínimo añadido previamente)
+        socket.emit("CreateRoomResponse", { status: "success" });
         io.sockets.sockets.forEach(s => emitRoomsToSocket(s));
       }
     );
   });
 
-  // UNIRSE A SALA
-  socket.on("JoinRoomRequest", (data) => {
-    const { roomId } = data || {};
-    if (!roomId) {
-      socket.emit("JoinRoomResponse", {
-        status: "error",
-        message: "roomId is required",
-      });
+  // UNIRSE A SALA: robusto ante número, string, objeto o array
+  socket.on("JoinRoomRequest", (arg1, arg2) => {
+    // Permite que Unity envíe un número simple como arg1
+    let roomId = 0;
+
+    // Si es número directo
+    if (typeof arg1 === "number") {
+      roomId = arg1;
+    } else if (typeof arg1 === "string") {
+      // Intenta parsear número o JSON
+      const num = Number(arg1);
+      if (isFinite(num) && num > 0) {
+        roomId = num;
+      } else {
+        try {
+          const obj = JSON.parse(arg1);
+          let raw = obj && obj.roomId;
+          roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+        } catch {
+          roomId = 0;
+        }
+      }
+    } else if (Array.isArray(arg1)) {
+      const first = arg1[0];
+      if (typeof first === "number") {
+        roomId = first;
+      } else if (typeof first === "string") {
+        const num = Number(first);
+        roomId = isFinite(num) ? num : 0;
+      } else if (typeof first === "object" && first) {
+        let raw = first.roomId;
+        roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+      }
+    } else if (typeof arg1 === "object" && arg1) {
+      let raw = arg1.roomId;
+      roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+    }
+
+    if (!roomId || !isFinite(roomId) || roomId <= 0) {
+      socket.emit("JoinRoomResponse", { status: "error", message: "roomId is required" });
       return;
     }
 
@@ -197,54 +208,75 @@ io.on("connection", (socket) => {
           return;
         }
         const rows = results[0] || [];
-        
-        // Formatear mensajes sin IDs
         const formattedMessages = rows.map(msg => ({
           username: msg.username,
           text: msg.text,
           createDate: msg.createDate
         }));
-        
         socket.emit("ServerResponseRequestMessageListToClient", formattedMessages);
       }
     );
   });
 
-  // SOLICITAR LISTA DE MENSAJES
-    socket.on("ClientRequestMessageListToServer", (data) => {
-      // Parseo robusto: string -> JSON, array -> primer elemento, objeto -> tal cual
-      let obj = data;
-      try {
-        if (typeof obj === "string") obj = JSON.parse(obj);
-        if (Array.isArray(obj)) obj = obj[0] || {};
-      } catch (e) {
-        obj = {};
-      }
+  // SOLICITAR LISTA DE MENSAJES: robusto ante número/objeto/array/string
+  socket.on("ClientRequestMessageListToServer", (arg1, arg2) => {
+    let roomId = 0;
 
-      const roomId = Number(obj && obj.roomId);
-      if (!roomId) {
-        // No llamar al procedure si falta roomId
-        socket.emit("ServerResponseRequestMessageListToClient", []);
-        return;
-      }
-
-      bddConnection.query(
-        "CALL " + PROC.GET_ROOM_MESSAGES + "(?);",
-        [roomId],
-        (err, results) => {
-          if (err) {
-            console.error("Error calling GetRoomMessages:", err);
-            socket.emit("ServerResponseRequestMessageListToClient", []);
-            return;
-          }
-          const rows = results[0] || [];
-          const formattedMessages = rows.map(function (msg) {
-            return { username: msg.username, text: msg.text, createDate: msg.createDate };
-          });
-          socket.emit("ServerResponseRequestMessageListToClient", formattedMessages);
+    if (typeof arg1 === "number") {
+      roomId = arg1;
+    } else if (typeof arg1 === "string") {
+      const num = Number(arg1);
+      if (isFinite(num) && num > 0) {
+        roomId = num;
+      } else {
+        try {
+          const obj = JSON.parse(arg1);
+          let raw = obj && obj.roomId;
+          roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+        } catch {
+          roomId = 0;
         }
-      );
-    });
+      }
+    } else if (Array.isArray(arg1)) {
+      const first = arg1[0];
+      if (typeof first === "number") {
+        roomId = first;
+      } else if (typeof first === "string") {
+        const num = Number(first);
+        roomId = isFinite(num) ? num : 0;
+      } else if (typeof first === "object" && first) {
+        let raw = first.roomId;
+        roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+      }
+    } else if (typeof arg1 === "object" && arg1) {
+      let raw = arg1.roomId;
+      roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+    }
+
+    if (!roomId || !isFinite(roomId) || roomId <= 0) {
+      socket.emit("ServerResponseRequestMessageListToClient", []);
+      return;
+    }
+
+    bddConnection.query(
+      `CALL ${PROC.GET_ROOM_MESSAGES}(?);`,
+      [roomId],
+      (err, results) => {
+        if (err) {
+          console.error("Error calling GetRoomMessages:", err);
+          socket.emit("ServerResponseRequestMessageListToClient", []);
+          return;
+        }
+        const rows = results[0] || [];
+        const formattedMessages = rows.map(msg => ({
+          username: msg.username,
+          text: msg.text,
+          createDate: msg.createDate
+        }));
+        socket.emit("ServerResponseRequestMessageListToClient", formattedMessages);
+      }
+    );
+  });
 
   // ENVIAR MENSAJE
   socket.on("ClientMessageToServer", (messageData) => {
@@ -266,11 +298,10 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Insertar mensaje en la base de datos
     bddConnection.query(
       `CALL ${PROC.ADD_MESSAGE}(?, ?, ?);`,
       [roomId, user.id, content],
-      (err, results) => {
+      (err) => {
         if (err) {
           console.error("Error calling AddMessage:", err);
           socket.emit("ServerMessageToClient", {
@@ -280,25 +311,22 @@ io.on("connection", (socket) => {
           return;
         }
 
-        // Crear objeto de mensaje sin IDs para enviar a los clientes
         const messageToSend = {
-          username: user.username,  // Solo nombre de usuario
+          username: user.username,
           text: content,
           created_at: new Date(),
-          room_id: roomId           // Opcional, si necesitas para lógica
+          room_id: roomId
         };
 
-        // Enviar a todos en la sala
         io.to(roomChannel(roomId)).emit("ServerMessageToClient", messageToSend);
       }
     );
   });
 
   // LOGOUT
-  socket.on("LogoutRequest", (logoutData) => {
+  socket.on("LogoutRequest", () => {
     const user = loggedUsers.get(socket.id);
     if (user) {
-      console.log("Usuario logout:", user.username);
       loggedUsers.delete(socket.id);
     }
     socket.emit("LogoutResponse", { status: "success" });
@@ -310,7 +338,6 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const user = loggedUsers.get(socket.id);
     if (user) {
-      console.log("Usuario desconectado:", user.username);
       loggedUsers.delete(socket.id);
     }
     console.log("Socket disconnected:", socket.id);
