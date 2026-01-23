@@ -44,16 +44,63 @@ io.on("connection", (socket) => {
       address.remotePort
   );
 
-  // LOGIN - Mantenemos tu código actual
-  socket.on("LoginRequest", (loginData) => {
-    const { username, password } = loginData || {};
+   // LOGIN - parseo robusto de argumentos múltiples u objeto
+  socket.on("LoginRequest", (arg1, arg2) => {
+    console.log("[LoginRequest] raw arg1 typeof=", typeof arg1, "value=", arg1, "arg2 typeof=", typeof arg2, "value=", arg2);
+
+    let username = "";
+    let password = "";
+
+    // Forma 1: dos argumentos simples (strings) enviados por el cliente C#
+    if (typeof arg1 === "string" && typeof arg2 === "string") {
+      username = arg1.trim();
+      password = arg2.trim();
+    } else {
+      // Forma 2: objeto/array/string JSON como antes
+      let dataObj = arg1;
+      try {
+        if (typeof dataObj === "string") {
+          dataObj = JSON.parse(dataObj);
+        }
+        if (Array.isArray(dataObj)) {
+          // Algunos clientes envuelven el objeto como primer elemento del array
+          dataObj = dataObj[0] || {};
+        }
+      } catch (e) {
+        console.warn("LoginRequest payload parse warning:", e);
+        dataObj = {};
+      }
+
+      // Extraer username/password admitiendo strings o arrays con primer elemento
+      if (dataObj) {
+        if (Array.isArray(dataObj.username)) {
+          username = String((dataObj.username[0] || "").trim());
+        } else if (typeof dataObj.username === "string") {
+          username = dataObj.username.trim();
+        }
+        if (Array.isArray(dataObj.password)) {
+          password = String((dataObj.password[0] || "").trim());
+        } else if (typeof dataObj.password === "string") {
+          password = dataObj.password.trim();
+        }
+      }
+    }
+
+    console.log("[LoginRequest] parsed username='" + username + "' password='(hidden)'");
+
+    const loginResponseData = {};
+
+    if (!username || !password) {
+      loginResponseData.status = "error";
+      loginResponseData.message = "User or password is blank";
+      socket.emit("LoginResponse", loginResponseData);
+      return;
+    }
 
     bddConnection.query(
       "SELECT id, username FROM Users WHERE username = ? AND password = ?;",
       [username, password],
       (err, result) => {
-        const loginResponseData = {};
-
         if (err) {
           console.log(err);
           loginResponseData.status = "error";
@@ -69,10 +116,7 @@ io.on("connection", (socket) => {
           return;
         }
 
-        const user = { 
-          id: result[0].id, 
-          username: result[0].username 
-        };
+        const user = { id: result[0].id, username: result[0].username };
         loggedUsers.set(socket.id, user);
 
         loginResponseData.status = "success";
@@ -123,7 +167,7 @@ io.on("connection", (socket) => {
           status: "success"
         });
 
-        // Refrescar listado de salas para todos los clientes (cambio mínimo añadido)
+        // Refrescar listado de salas para todos los clientes (cambio mínimo añadido previamente)
         io.sockets.sockets.forEach(s => emitRoomsToSocket(s));
       }
     );

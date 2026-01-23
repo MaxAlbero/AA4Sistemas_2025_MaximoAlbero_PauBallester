@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 
-// Mapeo con NodeGrid.Node.JewelType
+// Mapeo con NodeGrid.Node.JewelType (cliente C#)
 const Jewel = {
   None: 0,
   Red: 1,
@@ -14,26 +14,23 @@ const Jewel = {
 const JEWELS = [Jewel.Red, Jewel.Green, Jewel.Blue, Jewel.Yellow, Jewel.Orange, Jewel.Purple];
 
 class ColumnsEngine {
-  constructor({ sizeX = 6, sizeY = 12, tickMs = 500, seed = null }) {
-    this.sizeX = sizeX;
-    this.sizeY = sizeY;
-    this.tickMs = tickMs;
-    this.seed = seed || crypto.randomBytes(8).toString("hex");
+  constructor(opts) {
+    opts = opts || {};
+    this.sizeX = Number(opts.sizeX || 6);
+    this.sizeY = Number(opts.sizeY || 12);
+    this.tickMs = Number(opts.tickMs || 500);
+    this.seed = opts.seed || crypto.randomBytes(8).toString("hex");
     this._rng = this._mulberry32(this._hashSeed(this.seed));
     this.grid = this._createEmptyGrid();
     this._interval = null;
 
-    // Estado de replay
-    this.replay = {
-      id: null,                // se asigna al crear en BDD
-      seq: 0,                  // contador de eventos
-      onRecord: null,          // function({type, payload, seq})
-    };
+    // Replay hooks
+    this.replay = { seq: 0, onRecord: null };
 
-    // Callbacks de broadcasting
-    this.onSetup = null;       // function(setupGridObj)
-    this.onUpdate = null;      // function(gridUpdateObj)
-    this.onEnd = null;         // function()
+    // Callbacks al exterior
+    this.onSetup = null;   // function(setupObj)
+    this.onUpdate = null;  // function(updateObj)
+    this.onEnd = null;     // function()
   }
 
   _hashSeed(seed) {
@@ -58,20 +55,19 @@ class ColumnsEngine {
     return g;
   }
 
-  getSetupGrid({ playerId = 0, playerName = "P1" } = {}) {
+  getSetupGrid(meta) {
+    meta = meta || {};
     return {
-      playerId,
-      playerName,
+      playerId: Number(meta.playerId || 0),
+      playerName: String(meta.playerName || "P1"),
       sizeX: this.sizeX,
       sizeY: this.sizeY,
     };
   }
 
-  // Ejemplo simplificado de "step": cae un bloque y limpia tríos verticales
   step() {
-    // Generar una caída simple en una columna aleatoria
+    // Demo: cae una gema en una columna aleatoria y limpia tríos verticales
     const col = Math.floor(this._rng() * this.sizeX);
-    // Buscar desde abajo hacia arriba la primera celda vacía
     for (let y = this.sizeY - 1; y >= 0; y--) {
       if (this.grid[col][y] === Jewel.None) {
         this.grid[col][y] = JEWELS[Math.floor(this._rng() * JEWELS.length)];
@@ -79,7 +75,6 @@ class ColumnsEngine {
       }
     }
 
-    // Limpiar tríos verticales (Columns) muy básico
     const toClear = [];
     for (let x = 0; x < this.sizeX; x++) {
       for (let y = 0; y <= this.sizeY - 3; y++) {
@@ -91,14 +86,12 @@ class ColumnsEngine {
     }
     toClear.forEach(({ x, y }) => this.grid[x][y] = Jewel.None);
 
-    // Compactar columna (caída tras clear)
     for (let x = 0; x < this.sizeX; x++) {
       const stack = this.grid[x].filter(v => v !== Jewel.None);
       while (stack.length < this.sizeY) stack.unshift(Jewel.None);
       this.grid[x] = stack;
     }
 
-    // Construir updates incrementales: para demo, incluimos toda la columna cambiada y clears
     const updatedNodes = [];
     for (let y = 0; y < this.sizeY; y++) {
       updatedNodes.push({ type: this.grid[col][y], x: col, y });
@@ -113,16 +106,15 @@ class ColumnsEngine {
   }
 
   start() {
-    // Emitir setup inicial
     const setup = this.getSetupGrid();
     if (this.onSetup) this.onSetup(setup);
     this._record("GRID_SETUP", setup);
 
-    // Bucle de juego
-    this._interval = setInterval(() => {
-      const update = this.step();
-      if (this.onUpdate) this.onUpdate(update);
-      this._record("GRID_UPDATE", update);
+    const self = this;
+    this._interval = setInterval(function () {
+      const update = self.step();
+      if (self.onUpdate) self.onUpdate(update);
+      self._record("GRID_UPDATE", update);
     }, this.tickMs);
   }
 
@@ -135,9 +127,10 @@ class ColumnsEngine {
   }
 
   _record(type, payload) {
-    if (!this.replay || !this.replay.onRecord) return;
+    const cb = this.replay && this.replay.onRecord;
+    if (!cb) return;
     this.replay.seq++;
-    this.replay.onRecord({ type, payload, seq: this.replay.seq });
+    cb({ type: type, payload: payload, seq: this.replay.seq });
   }
 }
 
