@@ -958,7 +958,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e7ab267c8ae9d8d4f8223b1aa90f54a5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  serverUrlLink: http://192.168.1.75:3000/
+  serverUrlLink: http://192.168.1.75:3000
+  username: user
+  password: user
+  roomId: 1
+  joinFirstRoomOnLogin: 0
   nodeGrid: {fileID: 1306389925}
 --- !u!1 &1140345488
 GameObject:
@@ -1043,7 +1047,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 2122282102}
   m_Direction: 2
   m_Value: 0
-  m_Size: 1
+  m_Size: 0.99994373
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
@@ -1243,7 +1247,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0.0007679154}
+  m_AnchoredPosition: {x: 0, y: 0.000031995394}
   m_SizeDelta: {x: 0, y: 720}
   m_Pivot: {x: 0.5, y: 1}
 --- !u!114 &1459056365
