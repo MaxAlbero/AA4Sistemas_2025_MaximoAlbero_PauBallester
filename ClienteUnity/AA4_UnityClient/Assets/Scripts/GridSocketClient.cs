@@ -211,16 +211,14 @@ public class GridSocketClient : MonoBehaviour
         Debug.Log("[GridSocketClient] Emit LoginRequest args username='" + u + "' password='(hidden)'");
         socket.EmitAsync("LoginRequest", u, p);
     }
-
     private void JoinRoom(int id)
     {
         awaitingJoinResponse = true;
 
-        var data = new JObject { ["roomId"] = id };
-        Debug.Log("[GridSocketClient] Emit JoinRoomRequest payload=" + data.ToString(Newtonsoft.Json.Formatting.None));
-        socket.EmitAsync("JoinRoomRequest", data);
+        // CAMBIO: enviar el roomId como argumento numérico simple
+        Debug.Log("[GridSocketClient] Emit JoinRoomRequest roomId=" + id);
+        socket.EmitAsync("JoinRoomRequest", id);
     }
-
     private JToken TryGetToken(SocketIOResponse response)
     {
         try
