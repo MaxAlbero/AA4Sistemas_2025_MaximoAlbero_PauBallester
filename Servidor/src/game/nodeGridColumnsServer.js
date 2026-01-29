@@ -26,23 +26,24 @@ class NodeGridColumnsServer {
     this.playerName = "P1";
     this.grid = []; // [x][y] -> Jewel
 
-    // Falling column state
+    // Estado de la columna en caída (3 gemas)
     this.falling = {
       x: 0,
-      yTop: -3,        // top segment y index (can be negative before appearing)
+      yTop: -3,        // y del segmento superior (puede ser negativo antes de entrar en la parrilla)
       jewels: [Jewel.Red, Jewel.Green, Jewel.Blue],
       softDrop: false,
-      prevCells: []    // previous occupied cells to clear on move
+      prevCells: []    // celdas visibles dibujadas previamente (para limpiar al mover)
     };
 
     this._interval = null;
 
-    // Callbacks
+    // Callbacks hacia el exterior
     this.onSetup = null;   // (GridSetup)
     this.onUpdate = null;  // (GridUpdate)
     this.onEnd = null;     // ()
   }
 
+  // Inicializa el grid y emite setup + snapshot inicial
   provideSetup(gridSetup) {
     if (!gridSetup || !Number.isFinite(gridSetup.sizeX) || !Number.isFinite(gridSetup.sizeY)) {
       throw new Error("Invalid GridSetup");
@@ -52,7 +53,7 @@ class NodeGridColumnsServer {
     this.playerId = Number(gridSetup.playerId || 0);
     this.playerName = String(gridSetup.playerName || "P1");
 
-    // Init grid
+    // Inicializa matriz con None
     this.grid = [];
     for (let x = 0; x < this.sizeX; x++) {
       const col = [];
@@ -60,9 +61,10 @@ class NodeGridColumnsServer {
       this.grid.push(col);
     }
 
-    // Spawn first falling column
+    // Spawnear primera columna
     this._spawnNewColumn();
 
+    // Emitir setup y snapshot completo (útil para espectadores tardíos)
     if (this.onSetup) {
       this.onSetup({
         playerId: this.playerId,
@@ -71,11 +73,11 @@ class NodeGridColumnsServer {
         sizeY: this.sizeY
       });
     }
-    // Also emit a full snapshot once (viewer may join late)
     const full = this.getFullUpdate();
     if (this.onUpdate) this.onUpdate(full);
   }
 
+  // Construye un GridUpdate con TODO el estado actual
   getFullUpdate() {
     const updatedNodes = [];
     for (let x = 0; x < this.sizeX; x++) {
@@ -83,7 +85,7 @@ class NodeGridColumnsServer {
         updatedNodes.push({ type: this.grid[x][y], x, y });
       }
     }
-    // Also include falling column cells if visible
+    // Incluir columna en caída si es visible
     const fallCells = this._currentFallingCells();
     fallCells.forEach(c => {
       if (c.y >= 0 && c.y < this.sizeY) {
@@ -95,7 +97,6 @@ class NodeGridColumnsServer {
 
   start() {
     if (this.sizeX <= 0 || this.sizeY <= 0) throw new Error("Call provideSetup first");
-
     const tick = () => {
       const update = this.step();
       if (update && this.onUpdate) this.onUpdate(update);
@@ -111,10 +112,9 @@ class NodeGridColumnsServer {
     if (this.onEnd) this.onEnd();
   }
 
+  // Aplica input del jugador
   applyInput(action) {
     // action: 'left' | 'right' | 'rotate' | 'softDropStart' | 'softDropEnd'
-    if (!this._canMove()) return;
-
     switch (action) {
       case "left":
         this._tryShift(-1);
@@ -123,10 +123,9 @@ class NodeGridColumnsServer {
         this._tryShift(1);
         break;
       case "rotate":
-        // Rotate jewels order: top->middle->bottom->top
+        // Rotación simple: top->mid->bottom->top
         const j = this.falling.jewels;
         this.falling.jewels = [j[2], j[0], j[1]];
-        // Refresh visible cells immediately
         this._refreshFallingVisual();
         break;
       case "softDropStart":
@@ -140,29 +139,27 @@ class NodeGridColumnsServer {
     }
   }
 
+  // Un paso de simulación
   step() {
-    // Move down by one if possible, else lock and resolve
     const updateNodes = [];
 
-    // Clear previous falling visuals
+    // Limpiar visual previo de la columna
     this.falling.prevCells.forEach(c => {
       if (c.y >= 0 && c.y < this.sizeY) updateNodes.push({ type: Jewel.None, x: c.x, y: c.y });
     });
 
-    // Attempt to move down
+    // Intentar caer una fila
     if (this._canFallOne()) {
       this.falling.yTop += 1;
-      // Draw new falling cells
       const cells = this._currentFallingCells();
       this.falling.prevCells = cells;
       cells.forEach(c => {
         if (c.y >= 0 && c.y < this.sizeY) updateNodes.push({ type: c.type, x: c.x, y: c.y });
       });
-
       return { playerId: this.playerId, playerName: this.playerName, updatedNodes: updateNodes };
     }
 
-    // Can't move: lock into grid
+    // No puede caer: bloquear en el grid
     const lockCells = this._currentFallingCells();
     lockCells.forEach(c => {
       if (c.y >= 0 && c.y < this.sizeY) {
@@ -171,15 +168,32 @@ class NodeGridColumnsServer {
       }
     });
 
-    // Resolve matches and gravity
-    const cleared = this._clearMatches();
+    // 1) Limpiar combinaciones (verticales y horizontales mínimas)
+    let cleared = this._clearMatches();
     cleared.forEach(c => updateNodes.push({ type: Jewel.None, x: c.x, y: c.y }));
-    const grav = this._applyGravity();
-    grav.forEach(c => updateNodes.push({ type: this.grid[c.x][c.y], x: c.x, y: c.y }));
 
-    // Spawn new column
+    // 2) Aplicar gravedad con movimientos explícitos (origen y destino)
+    let moves = this._applyGravity();
+    moves.forEach(m => {
+      updateNodes.push({ type: Jewel.None, x: m.fromX, y: m.fromY });
+      updateNodes.push({ type: this.grid[m.toX][m.toY], x: m.toX, y: m.toY });
+    });
+
+    // 3) Cascadas: repetir limpieza+gravedad hasta estabilizar
+    while (true) {
+      const moreClears = this._clearMatches();
+      if (!moreClears.length) break;
+      moreClears.forEach(c => updateNodes.push({ type: Jewel.None, x: c.x, y: c.y }));
+
+      const moreMoves = this._applyGravity();
+      moreMoves.forEach(m => {
+        updateNodes.push({ type: Jewel.None, x: m.fromX, y: m.fromY });
+        updateNodes.push({ type: this.grid[m.toX][m.toY], x: m.toX, y: m.toY });
+      });
+    }
+
+    // Nueva columna en caída
     this._spawnNewColumn();
-    // Show new falling cells (if visible)
     this.falling.prevCells.forEach(c => {
       if (c.y >= 0 && c.y < this.sizeY) updateNodes.push({ type: c.type, x: c.x, y: c.y });
     });
@@ -187,7 +201,7 @@ class NodeGridColumnsServer {
     return { playerId: this.playerId, playerName: this.playerName, updatedNodes: updateNodes };
   }
 
-  // Helpers
+  // ===== Helpers =====
 
   _tickMs() {
     return this.falling.softDrop ? this.tickMsSoft : this.tickMsNormal;
@@ -215,7 +229,6 @@ class NodeGridColumnsServer {
   }
 
   _currentFallingCells() {
-    // Cells are vertically consecutive: top, mid, bottom
     const x = this.falling.x;
     const yTop = this.falling.yTop;
     const [t, m, b] = this.falling.jewels;
@@ -226,20 +239,15 @@ class NodeGridColumnsServer {
     ];
   }
 
-  _canMove() {
-    // If any visible part is above grid top, still allow rotation/shift as long as target cells free
-    return true;
-  }
-
   _tryShift(dx) {
     const targetX = this.falling.x + dx;
     if (targetX < 0 || targetX >= this.sizeX) return;
     const yTop = this.falling.yTop;
-    // Check occupancy for visible parts (y in 0..sizeY-1)
+    // Comprobar ocupación para partes visibles (y en 0..sizeY-1)
     for (let i = 0; i < 3; i++) {
       const y = yTop + i;
       if (y >= 0 && y < this.sizeY) {
-        if (this.grid[targetX][y] !== Jewel.None) return; // blocked
+        if (this.grid[targetX][y] !== Jewel.None) return; // bloqueado
       }
     }
     this.falling.x = targetX;
@@ -247,7 +255,6 @@ class NodeGridColumnsServer {
   }
 
   _refreshFallingVisual() {
-    // Immediately emit current falling cells as update (clear prev, draw new)
     const updateNodes = [];
     this.falling.prevCells.forEach(c => {
       if (c.y >= 0 && c.y < this.sizeY) updateNodes.push({ type: Jewel.None, x: c.x, y: c.y });
@@ -263,42 +270,75 @@ class NodeGridColumnsServer {
   _canFallOne() {
     const x = this.falling.x;
     const yTopNext = this.falling.yTop + 1;
-    // Check if bottom of column would collide
     const yBottomNext = yTopNext + 2;
-    if (yBottomNext < 0) return true; // still above grid, can fall
-    if (yBottomNext >= this.sizeY) return false; // would go beyond bottom
 
-    // If the bottom cell is within grid and occupied, cannot fall
+    if (yBottomNext < 0) return true;              // aún por encima, puede caer
+    if (yBottomNext >= this.sizeY) return false;   // tocaría fondo
+
+    // Bloqueo por ocupación
     if (this.grid[x][yBottomNext] !== Jewel.None) return false;
-
-    // Also ensure mid cell not colliding when enters grid
     const midY = yTopNext + 1;
     if (midY >= 0 && midY < this.sizeY && this.grid[x][midY] !== Jewel.None) return false;
-
     const topY = yTopNext;
     if (topY >= 0 && topY < this.sizeY && this.grid[x][topY] !== Jewel.None) return false;
 
     return true;
   }
 
+  // Limpia secuencias de 3+ iguales en horizontal, vertical y diagonales
   _clearMatches() {
-    const toClear = [];
-    // Vertical trios
-    for (let x = 0; x < this.sizeX; x++) {
-      for (let y = 0; y <= this.sizeY - 3; y++) {
-        const a = this.grid[x][y], b = this.grid[x][y + 1], c = this.grid[x][y + 2];
-        if (a !== Jewel.None && a === b && b === c) {
-          toClear.push({ x, y }, { x, y: y + 1 }, { x, y: y + 2 });
+    const key = (x, y) => `${x},${y}`;
+    const toClearSet = new Set();
+
+    const inBounds = (x, y) => (x >= 0 && x < this.sizeX && y >= 0 && y < this.sizeY);
+
+    const dirs = [
+      { dx: 1, dy: 0 },   // horizontal →
+      { dx: 0, dy: 1 },   // vertical ↓
+      { dx: 1, dy: 1 },   // diagonal ↓→
+      { dx: -1, dy: 1 },  // diagonal ↓←
+    ];
+
+    for (let y = 0; y < this.sizeY; y++) {
+      for (let x = 0; x < this.sizeX; x++) {
+        const val = this.grid[x][y];
+        if (val === Jewel.None) continue;
+
+        for (const { dx, dy } of dirs) {
+          // Contar longitud de la secuencia desde (x,y) en dirección (dx,dy)
+          let len = 1;
+          let nx = x + dx, ny = y + dy;
+          while (inBounds(nx, ny) && this.grid[nx][ny] === val) {
+            len++;
+            nx += dx; ny += dy;
+          }
+
+          if (len >= 3) {
+            // Añadir todas las posiciones de la secuencia al conjunto
+            nx = x; ny = y;
+            for (let i = 0; i < len; i++) {
+              toClearSet.add(key(nx, ny));
+              nx += dx; ny += dy;
+            }
+          }
         }
       }
     }
-    // Clear them
-    toClear.forEach(({ x, y }) => this.grid[x][y] = Jewel.None);
+
+    // Aplicar limpieza en la matriz y devolver lista de posiciones
+    const toClear = [];
+    toClearSet.forEach(k => {
+      const [sx, sy] = k.split(",").map(Number);
+      this.grid[sx][sy] = Jewel.None;
+      toClear.push({ x: sx, y: sy });
+    });
+
     return toClear;
   }
 
+  // Gravedad con movimientos explícitos (origen y destino)
   _applyGravity() {
-    const moved = [];
+    const moves = [];
     for (let x = 0; x < this.sizeX; x++) {
       let writeY = this.sizeY - 1;
       for (let y = this.sizeY - 1; y >= 0; y--) {
@@ -307,13 +347,13 @@ class NodeGridColumnsServer {
           if (y !== writeY) {
             this.grid[x][writeY] = val;
             this.grid[x][y] = Jewel.None;
-            moved.push({ x, y: writeY });
+            moves.push({ fromX: x, fromY: y, toX: x, toY: writeY });
           }
           writeY--;
         }
       }
     }
-    return moved;
+    return moves;
   }
 }
 
