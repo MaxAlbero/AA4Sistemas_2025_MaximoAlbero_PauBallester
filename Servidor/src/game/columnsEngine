@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 
-// Mapeo con NodeGrid.Node.JewelType (cliente C#)
+// Tipos de gema (coincide con NodeGrid del cliente C#)
 const Jewel = {
   None: 0,
   Red: 1,
@@ -24,7 +24,7 @@ class ColumnsEngine {
     this.grid = this._createEmptyGrid();
     this._interval = null;
 
-    // Replay hooks
+    // Hooks de replay (opcional)
     this.replay = { seq: 0, onRecord: null };
 
     // Callbacks al exterior
@@ -66,7 +66,7 @@ class ColumnsEngine {
   }
 
   step() {
-    // Demo: cae una gema en una columna aleatoria y limpia tríos verticales
+    // Demo muy simple: cae una gema en columna aleatoria y limpia tríos verticales
     const col = Math.floor(this._rng() * this.sizeX);
     for (let y = this.sizeY - 1; y >= 0; y--) {
       if (this.grid[col][y] === Jewel.None) {
@@ -86,6 +86,7 @@ class ColumnsEngine {
     }
     toClear.forEach(({ x, y }) => this.grid[x][y] = Jewel.None);
 
+    // Compactar columnas tras limpiar
     for (let x = 0; x < this.sizeX; x++) {
       const stack = this.grid[x].filter(v => v !== Jewel.None);
       while (stack.length < this.sizeY) stack.unshift(Jewel.None);

@@ -4,6 +4,7 @@ const path = require("path");
 
 const io = app.get("io");
 const bddConnection = app.get("bdd");
+const { NodeGridColumnsServer } = require("../../game/nodeGridColumnsServer"); // [ADD]
 
 // Nombres de los procedures
 const PROC = {
@@ -16,11 +17,26 @@ const PROC = {
 const loggedUsers = new Map();
 const roomChannel = (roomId) => `room_${roomId}`;
 
+// Estado por sala: engines por jugador
+// roomId -> { status:'WAITING'|'RUNNING'|'ENDED', players:Set<socketId>, engines: Map<playerKey,{engine,started}> }
+const roomGames = new Map();
+
+function ensureRoom(roomId) {
+  let game = roomGames.get(roomId);
+  if (game) return game;
+  game = {
+    status: "WAITING",
+    players: new Set(),
+    engines: new Map()
+  };
+  roomGames.set(roomId, game);
+  return game;
+}
+
 router.get("/", (req, res) => {
   res.sendFile(path.resolve(__dirname + "/chat.html"));
 });
 
-// Utilidad: emitir lista de salas
 function emitRoomsToSocket(socket) {
   bddConnection.query(
     "SELECT id, name FROM Rooms ORDER BY id DESC",
@@ -151,42 +167,26 @@ io.on("connection", (socket) => {
       }
     );
   });
-
-  // UNIRSE A SALA: robusto ante número, string, objeto o array
+  
+  // Unirse a sala: asignación de roles por socket.id (primeros 2 -> player)
   socket.on("JoinRoomRequest", (arg1, arg2) => {
-    // Permite que Unity envíe un número simple como arg1
     let roomId = 0;
-
-    // Si es número directo
-    if (typeof arg1 === "number") {
-      roomId = arg1;
-    } else if (typeof arg1 === "string") {
-      // Intenta parsear número o JSON
-      const num = Number(arg1);
-      if (isFinite(num) && num > 0) {
-        roomId = num;
-      } else {
+    if (typeof arg1 === "number") roomId = arg1;
+    else if (typeof arg1 === "string") {
+      const n = Number(arg1);
+      if (isFinite(n) && n > 0) roomId = n;
+      else {
         try {
-          const obj = JSON.parse(arg1);
-          let raw = obj && obj.roomId;
+          const o = JSON.parse(arg1);
+          const raw = o && o.roomId;
           roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
-        } catch {
-          roomId = 0;
-        }
+        } catch { roomId = 0; }
       }
     } else if (Array.isArray(arg1)) {
-      const first = arg1[0];
-      if (typeof first === "number") {
-        roomId = first;
-      } else if (typeof first === "string") {
-        const num = Number(first);
-        roomId = isFinite(num) ? num : 0;
-      } else if (typeof first === "object" && first) {
-        let raw = first.roomId;
-        roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
-      }
+      const f = arg1[0];
+      roomId = typeof f === "number" ? f : (isFinite(Number(f)) ? Number(f) : 0);
     } else if (typeof arg1 === "object" && arg1) {
-      let raw = arg1.roomId;
+      const raw = arg1.roomId;
       roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
     }
 
@@ -196,152 +196,126 @@ io.on("connection", (socket) => {
     }
 
     socket.join(roomChannel(roomId));
-    socket.emit("JoinRoomResponse", { status: "success", roomId });
 
-    // Obtener historial de mensajes
-    bddConnection.query(
-      `CALL ${PROC.GET_ROOM_MESSAGES}(?);`,
-      [roomId],
-      (err, results) => {
-        if (err) {
-          console.error("Error calling GetRoomMessages:", err);
-          return;
-        }
-        const rows = results[0] || [];
-        const formattedMessages = rows.map(msg => ({
-          username: msg.username,
-          text: msg.text,
-          createDate: msg.createDate
-        }));
-        socket.emit("ServerResponseRequestMessageListToClient", formattedMessages);
-      }
-    );
-  });
-
-  // SOLICITAR LISTA DE MENSAJES: robusto ante número/objeto/array/string
-  socket.on("ClientRequestMessageListToServer", (arg1, arg2) => {
-    let roomId = 0;
-
-    if (typeof arg1 === "number") {
-      roomId = arg1;
-    } else if (typeof arg1 === "string") {
-      const num = Number(arg1);
-      if (isFinite(num) && num > 0) {
-        roomId = num;
-      } else {
-        try {
-          const obj = JSON.parse(arg1);
-          let raw = obj && obj.roomId;
-          roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
-        } catch {
-          roomId = 0;
-        }
-      }
-    } else if (Array.isArray(arg1)) {
-      const first = arg1[0];
-      if (typeof first === "number") {
-        roomId = first;
-      } else if (typeof first === "string") {
-        const num = Number(first);
-        roomId = isFinite(num) ? num : 0;
-      } else if (typeof first === "object" && first) {
-        let raw = first.roomId;
-        roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
-      }
-    } else if (typeof arg1 === "object" && arg1) {
-      let raw = arg1.roomId;
-      roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+    const game = ensureRoom(roomId);
+    let role = "spectator";
+    if (game.players.size < 2 && !game.players.has(socket.id)) {
+      game.players.add(socket.id);
+      role = "player";
     }
 
+    // Si ya hay 2 jugadores en sala, estado RUNNING (los engines arrancarán al recibir setup)
+    if (game.players.size >= 2 && game.status === "WAITING") {
+      game.status = "RUNNING";
+    }
+
+    socket.emit("JoinRoomResponse", { status: "success", roomId, role });
+
+    // Mensajes (igual que tenías)
+    bddConnection.query(`CALL ${PROC.GET_ROOM_MESSAGES}(?);`, [roomId], (err, results) => {
+      if (err) return;
+      const rows = results[0] || [];
+      const formatted = rows.map(msg => ({ username: msg.username, text: msg.text, createDate: msg.createDate }));
+      socket.emit("ServerResponseRequestMessageListToClient", formatted);
+    });
+  });
+
+  // El cliente C# envía su GridSetup (NodeGrid.GridSetup) por player
+  socket.on("GameProvideSetup", (payload) => {
+    let setupObj = payload;
+    try {
+      if (typeof setupObj === "string") setupObj = JSON.parse(setupObj);
+    } catch (e) {
+      console.error("[GameProvideSetup] JSON parse error:", e);
+      return;
+    }
+
+    // Localizar la sala: preferimos roomId en payload; si no, inferimos desde socket.rooms
+    const explicitRoom = setupObj.roomId || setupObj.RoomId || setupObj.room_id;
+    let roomId = explicitRoom ? Number(explicitRoom) : 0;
+    if (!roomId) {
+      const rooms = Array.from(socket.rooms || []);
+      const r = rooms.find(rn => rn.startsWith("room_"));
+      if (r) roomId = Number(r.split("_")[1]);
+    }
     if (!roomId || !isFinite(roomId) || roomId <= 0) {
-      socket.emit("ServerResponseRequestMessageListToClient", []);
+      console.warn("[GameProvideSetup] cannot determine roomId; ignoring");
       return;
     }
 
-    bddConnection.query(
-      `CALL ${PROC.GET_ROOM_MESSAGES}(?);`,
-      [roomId],
-      (err, results) => {
-        if (err) {
-          console.error("Error calling GetRoomMessages:", err);
-          socket.emit("ServerResponseRequestMessageListToClient", []);
-          return;
-        }
-        const rows = results[0] || [];
-        const formattedMessages = rows.map(msg => ({
-          username: msg.username,
-          text: msg.text,
-          createDate: msg.createDate
-        }));
-        socket.emit("ServerResponseRequestMessageListToClient", formattedMessages);
-      }
-    );
+    const game = ensureRoom(roomId);
+
+    // Solo aceptar setups de sockets que son players
+    if (!game.players.has(socket.id)) {
+      console.warn("[GameProvideSetup] setup from spectator ignored");
+      return;
+    }
+
+    // Clave de player: usar el playerId que el cliente C# define en su GridSetup (o fallback a socket.id)
+    const playerKey = Number.isFinite(setupObj.playerId) ? String(setupObj.playerId) : socket.id;
+
+    // Crear engine si no existe para este player
+    let rec = game.engines.get(playerKey);
+    if (!rec) {
+      const engine = new NodeGridColumnsServer();
+      rec = { engine, started: false, socketId: socket.id };
+      game.engines.set(playerKey, rec);
+
+      // Emitir a toda la sala usando contrato NodeGrid
+      engine.onSetup = function (gridSetup) {
+        io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(gridSetup));
+      };
+      engine.onUpdate = function (gridUpdate) {
+        io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(gridUpdate));
+      };
+      engine.onEnd = function () {
+        // opcional: marcar estado
+      };
+    }
+
+    // Aplicar setup en el motor del player
+    try {
+      rec.engine.provideSetup({
+        playerId: Number(setupObj.playerId || 0),
+        playerName: String(setupObj.playerName || "P1"),
+        sizeX: Number(setupObj.sizeX),
+        sizeY: Number(setupObj.sizeY)
+      });
+    } catch (e) {
+      console.error("[GameProvideSetup] provideSetup error:", e);
+      return;
+    }
+
+    // Arrancar el engine de este player si la sala está en RUNNING y aún no arrancó
+    const readyToRun = (game.status === "RUNNING" && game.players.size >= 2);
+    if (readyToRun && !rec.started) {
+      rec.started = true;
+      rec.engine.start();
+    }
   });
 
-  // ENVIAR MENSAJE
-  socket.on("ClientMessageToServer", (messageData) => {
-    const user = loggedUsers.get(socket.id);
-    if (!user) {
-      socket.emit("ServerMessageToClient", {
-        status: "error",
-        message: "Not authenticated",
-      });
-      return;
-    }
-
-    const { roomId, content } = messageData || {};
-    if (!roomId || !content || typeof content !== "string") {
-      socket.emit("ServerMessageToClient", {
-        status: "error",
-        message: "roomId and content are required",
-      });
-      return;
-    }
-
-    bddConnection.query(
-      `CALL ${PROC.ADD_MESSAGE}(?, ?, ?);`,
-      [roomId, user.id, content],
-      (err) => {
-        if (err) {
-          console.error("Error calling AddMessage:", err);
-          socket.emit("ServerMessageToClient", {
-            status: "error",
-            message: "DB error inserting message",
-          });
-          return;
+  // Limpieza: liberar huecos de player y parar engines asociados si quieres
+  socket.on("disconnect", () => {
+    roomGames.forEach((game, rid) => {
+      if (game.players.delete(socket.id)) {
+        // Opcional: detener engines de ese player
+        for (const [key, rec] of game.engines.entries()) {
+          if (rec.socketId === socket.id) {
+            try { rec.engine.stop(); } catch {}
+            game.engines.delete(key);
+          }
         }
-
-        const messageToSend = {
-          username: user.username,
-          text: content,
-          created_at: new Date(),
-          room_id: roomId
-        };
-
-        io.to(roomChannel(roomId)).emit("ServerMessageToClient", messageToSend);
+        if (game.players.size === 0) {
+          game.status = "WAITING";
+        }
       }
-    );
-  });
-
-  // LOGOUT
-  socket.on("LogoutRequest", () => {
+    });
     const user = loggedUsers.get(socket.id);
-    if (user) {
-      loggedUsers.delete(socket.id);
-    }
-    socket.emit("LogoutResponse", { status: "success" });
+    if (user) loggedUsers.delete(socket.id);
   });
 
   // Al conectar, enviar listado de salas
   emitRoomsToSocket(socket);
-
-  socket.on("disconnect", () => {
-    const user = loggedUsers.get(socket.id);
-    if (user) {
-      loggedUsers.delete(socket.id);
-    }
-    console.log("Socket disconnected:", socket.id);
-  });
 });
 
 module.exports = router;
