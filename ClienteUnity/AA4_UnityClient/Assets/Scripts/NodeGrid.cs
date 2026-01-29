@@ -91,12 +91,15 @@ public class NodeGrid : MonoBehaviour
 
     public void SetupGrid(GridSetup gridSetup)
     {
+        Debug.Log("CREADO DESDE NODEGRID.CS");
+
         // Limpia cualquier grid previa en la jerarquía
         var toDestroy = new List<GameObject>();
         foreach (Transform child in transform)
             toDestroy.Add(child.gameObject);
         foreach (var go in toDestroy)
             Destroy(go);
+
 
         // Crea el modelo de datos
         _grid = new Grid(gridSetup);
@@ -141,10 +144,10 @@ public class NodeGrid : MonoBehaviour
             }
         }
 
-        // Centrar mínimamente la grid respecto al origen (opcional)
-        float width = _grid.columns.Count * cellSize;
+        //// Centrar mínimamente la grid respecto al origen (opcional)
+        //float width = _grid.columns.Count * cellSize;
         float height = (_grid.columns.Count > 0 ? _grid.columns[0].nodes.Count : 0) * cellSize;
-        this.transform.localPosition = new Vector3(-0.5f * (width - cellSize), 0.5f * (height - cellSize), 0f);
+        this.transform.localPosition = new Vector3(transform.localPosition.x, 0.5f * (height - cellSize), 0f);
 
         Debug.Log($"[NodeGrid] Grid setup {gridSetup.sizeX}x{gridSetup.sizeY} for {gridSetup.playerName} ({gridSetup.playerId})");
     }

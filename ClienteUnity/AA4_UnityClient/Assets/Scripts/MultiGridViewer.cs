@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using SocketIOClient;
@@ -6,71 +7,134 @@ using Newtonsoft.Json.Linq;
 
 public class MultiGridViewer : MonoBehaviour
 {
+    [Header("Server")]
     public string serverUrlLink = "http://localhost:3000";
+    public int roomId = 1; // set to the room you want to visualize
+    public bool autoJoinFirstRoom = false; // true to join the first room from ChatRoomsData
 
-    // Prefab o referencia al componente NodeGrid (se instanciará por player)
-    public NodeGrid nodeGridPrefab;
+    [SerializeField] GameObject gridParent;
 
     private SocketIOUnity socket;
-    private Dictionary<int, NodeGrid> gridsByPlayer = new();
+
+    // playerId -> NodeGrid
+    private readonly Dictionary<int, NodeGrid> gridsByPlayer = new();
+
+    // Simple main-thread dispatcher
+    private readonly Queue<Action> _mainQueue = new();
+
+    private void EnqueueMain(Action a)
+    {
+        lock (_mainQueue) _mainQueue.Enqueue(a);
+    }
+
+    private void Update()
+    {
+        lock (_mainQueue)
+        {
+            while (_mainQueue.Count > 0) _mainQueue.Dequeue()?.Invoke();
+        }
+    }
 
     private void Start()
     {
-        socket = new SocketIOUnity(new System.Uri(serverUrlLink));
-
-        socket.OnConnected += (s, e) => Debug.Log("[MultiGridViewer] Connected");
-
-        socket.On("setupGrid", resp =>
+        var uri = new Uri(serverUrlLink);
+        var opts = new SocketIOOptions
         {
-            var setupJson = ExtractPayloadString(resp);
-            var setup = JsonUtility.FromJson<NodeGrid.GridSetup>(setupJson);
-            if (!gridsByPlayer.ContainsKey(setup.playerId))
+            Query = new Dictionary<string, string> { ["viewer"] = "1" } // mark as spectator
+        };
+        socket = new SocketIOUnity(uri, opts);
+
+        socket.OnConnected += (s, e) =>
+        {
+            Debug.Log("[MultiGridViewer] Connected as viewer");
+            // If we know the roomId, join it now; otherwise wait for ChatRoomsData
+            if (!autoJoinFirstRoom && roomId > 0)
             {
-                var go = new GameObject($"Grid_{setup.playerId}");
-                var grid = go.AddComponent<NodeGrid>();
-                // Posicionar cada grid de forma distinta para que se vean las dos a la vez
-                go.transform.position = new Vector3(setup.playerId == 0 ? -5f : 5f, 0f, 0f);
-                grid.SetupGrid(setup);
-                gridsByPlayer[setup.playerId] = grid;
+                Debug.Log("[MultiGridViewer] Joining room " + roomId);
+                socket.EmitAsync("JoinRoomRequest", roomId);
             }
-            else
+        };
+
+        // Rooms list (if you want to auto-join first room)
+        socket.On("ChatRoomsData", resp =>
+        {
+            if (!autoJoinFirstRoom) return;
+            try
             {
-                gridsByPlayer[setup.playerId].SetupGrid(setup);
+                var json = ExtractPayloadString(resp);
+                var arr = JArray.Parse(json);
+                if (arr.Count > 0)
+                {
+                    var firstId = arr[0]["id"]?.Value<int>() ?? 0;
+                    if (firstId > 0)
+                    {
+                        roomId = firstId;
+                        Debug.Log("[MultiGridViewer] Auto-joining first room " + roomId);
+                        socket.EmitAsync("JoinRoomRequest", roomId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[MultiGridViewer] ChatRoomsData parse warning: " + ex.Message);
             }
         });
 
+        // Join confirmation
+        socket.On("JoinRoomResponse", resp =>
+        {
+            var raw = ExtractPayloadString(resp);
+            Debug.Log("[MultiGridViewer] JoinRoomResponse: " + raw);
+        });
+
+        // Game setup per player
+        socket.On("setupGrid", resp =>
+        {
+            var json = ExtractPayloadString(resp);
+            Debug.Log("[MultiGridViewer] setupGrid payload: " + json);
+            var setup = JsonUtility.FromJson<NodeGrid.GridSetup>(json);
+
+            EnqueueMain(() =>
+            {
+                if (!gridsByPlayer.TryGetValue(setup.playerId, out var grid))
+                {
+                    var go = new GameObject($"Grid_{setup.playerId}");
+                    // Position left/right or stacked so both grids are visible
+                    var offsetX = (setup.playerId % 2 == 0) ? -5f : 5f;
+                    go.transform.position = new Vector3(offsetX, 0f, 0f);
+                    grid = go.AddComponent<NodeGrid>();
+                    gridsByPlayer[setup.playerId] = grid;
+                }
+                grid.SetupGrid(setup);
+
+                grid.transform.SetParent(gridParent.transform);
+            });
+        });
+
+        // Game updates per player
         socket.On("updateGrid", resp =>
         {
-            var updateJson = ExtractPayloadString(resp);
-            var update = JsonUtility.FromJson<NodeGrid.GridUpdate>(updateJson);
-            if (gridsByPlayer.TryGetValue(update.playerId, out var grid))
+            var json = ExtractPayloadString(resp);
+            // Optional: log once to confirm events flow; comment later to reduce noise
+            // Debug.Log("[MultiGridViewer] updateGrid payload: " + json);
+
+            var update = JsonUtility.FromJson<NodeGrid.GridUpdate>(json);
+
+            EnqueueMain(() =>
             {
-                grid.UpdateGrid(update);
-            }
+                if (gridsByPlayer.TryGetValue(update.playerId, out var grid))
+                {
+                    grid.UpdateGrid(update);
+                }
+                else
+                {
+                    // Late spectator: grid not created yet? Request a re-setup or wait for next setup/full snapshot
+                    Debug.LogWarning("[MultiGridViewer] update for unknown playerId=" + update.playerId);
+                }
+            });
         });
 
         socket.Connect();
-    }
-
-    public void SendProvideSetup(int roomId, int playerId, string playerName, int sizeX, int sizeY)
-    {
-        var setup = new NodeGrid.GridSetup
-        {
-            playerId = playerId,
-            playerName = playerName,
-            sizeX = sizeX,
-            sizeY = sizeY
-        };
-        // Incluye roomId junto al setup para facilitar al servidor
-        var payload = new JObject
-        {
-            ["roomId"] = roomId,
-            ["playerId"] = playerId,
-            ["playerName"] = playerName,
-            ["sizeX"] = sizeX,
-            ["sizeY"] = sizeY
-        };
-        socket.EmitAsync("GameProvideSetup", payload);
     }
 
     private string ExtractPayloadString(SocketIOResponse response)
@@ -78,7 +142,11 @@ public class MultiGridViewer : MonoBehaviour
         try { return response.GetValue<string>(); }
         catch
         {
-            try { return response.GetValue<JToken>().ToString(Newtonsoft.Json.Formatting.None); }
+            try
+            {
+                var token = response.GetValue<JToken>();
+                return token.ToString(Newtonsoft.Json.Formatting.None);
+            }
             catch { return response.ToString(); }
         }
     }

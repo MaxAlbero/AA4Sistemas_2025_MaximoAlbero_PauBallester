@@ -10,8 +10,8 @@ public class GridSocketClient : MonoBehaviour
     public string serverUrlLink = "http://localhost:3000";
 
     [Header("Auth (must exist in DB)")]
-    public string username = "user"; // Rellena en el Inspector con un usuario real
-    public string password = "user";           // Rellena en el Inspector con su contraseña
+    public string username = "Primer Usuario"; // Rellena en el Inspector con un usuario real
+    public string password = "1234";           // Rellena en el Inspector con su contraseña
 
     [Header("Room")]
     public int roomId = 1;
@@ -35,12 +35,20 @@ public class GridSocketClient : MonoBehaviour
         }
 
         var uri = new Uri(serverUrlLink);
-        socket = new SocketIOUnity(uri);
+        var opts = new SocketIOClient.SocketIOOptions
+        {
+            Query = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["viewer"] = "1"
+            }
+        };
+        socket = new SocketIOUnity(uri, opts);
 
         socket.OnConnected += (s, e) =>
         {
-            Debug.Log("[GridSocketClient] Connected");
-            TryLogin();
+            Debug.Log("[GridSocketClient] Connected as viewer");
+            // No TryLogin(); unirse a la sala que quieras visualizar
+            JoinRoom(roomId); // o suscribirse a ChatRoomsData y auto-join
         };
 
         socket.OnDisconnected += (s, e) =>
@@ -160,6 +168,22 @@ public class GridSocketClient : MonoBehaviour
 
             try
             {
+                int playerIdToUse = 6;
+                string playerNameToUse = "P1";
+                int sizeX = 6, sizeY = 12;
+
+                var payload = new Newtonsoft.Json.Linq.JObject
+                {
+                    ["roomId"] = roomId,
+                    ["playerId"] = playerIdToUse,
+                    ["playerName"] = playerNameToUse,
+                    ["sizeX"] = sizeX,
+                    ["sizeY"] = sizeY
+                };
+
+                Debug.Log("[GridSocketClient] Emit GameProvideSetup " + payload.ToString(Newtonsoft.Json.Formatting.None));
+                socket.EmitAsync("GameProvideSetup", payload);
+
                 var token = TryGetToken(response);
                 JObject o = token as JObject;
                 if (o == null && token is JArray arr && arr.Count > 0) o = arr[0] as JObject;
@@ -194,23 +218,23 @@ public class GridSocketClient : MonoBehaviour
         try { socket?.Dispose(); } catch { /* ignore */ }
     }
 
-    private void TryLogin()
-    {
-        var u = (username ?? "").Trim();
-        var p = (password ?? "").Trim();
+    //private void TryLogin()
+    //{
+    //    var u = (username ?? "").Trim();
+    //    var p = (password ?? "").Trim();
 
-        if (string.IsNullOrEmpty(u) || string.IsNullOrEmpty(p))
-        {
-            Debug.LogError("[GridSocketClient] Username/password en blanco. Rellena el componente en el Inspector.");
-            return;
-        }
+    //    if (string.IsNullOrEmpty(u) || string.IsNullOrEmpty(p))
+    //    {
+    //        Debug.LogError("[GridSocketClient] Username/password en blanco. Rellena el componente en el Inspector.");
+    //        return;
+    //    }
 
-        awaitingLoginResponse = true;
+    //    awaitingLoginResponse = true;
 
-        // CAMBIO: enviar dos argumentos (username, password) en lugar de objeto
-        Debug.Log("[GridSocketClient] Emit LoginRequest args username='" + u + "' password='(hidden)'");
-        socket.EmitAsync("LoginRequest", u, p);
-    }
+    //    // CAMBIO: enviar dos argumentos (username, password) en lugar de objeto
+    //    Debug.Log("[GridSocketClient] Emit LoginRequest args username='" + u + "' password='(hidden)'");
+    //    socket.EmitAsync("LoginRequest", u, p);
+    //}
     private void JoinRoom(int id)
     {
         awaitingJoinResponse = true;
