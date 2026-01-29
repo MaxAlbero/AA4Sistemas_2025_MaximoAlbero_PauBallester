@@ -14,11 +14,11 @@ const PROC = {
   ADD_MESSAGE: "AddMessage"
 };
 
-const loggedUsers = new Map();
+const loggedUsers = new Map(); // socket.id -> { id, username }
 const roomChannel = (roomId) => `room_${roomId}`;
 
-// Estado por sala: engines por jugador
-// roomId -> { status:'WAITING'|'RUNNING'|'ENDED', players:Set<socketId>, engines: Map<playerKey,{engine,started}> }
+// Estado por sala: dos grids (máximo) y players logeados
+// roomId -> { status:'WAITING'|'RUNNING'|'ENDED', players:Set<userId>, engines: Map<userId,{engine,started,username}> }
 const roomGames = new Map();
 
 function ensureRoom(roomId) {
@@ -77,16 +77,10 @@ io.on("connection", (socket) => {
         dataObj = {};
       }
       if (dataObj) {
-        if (Array.isArray(dataObj.username)) {
-          username = String((dataObj.username[0] || "").trim());
-        } else if (typeof dataObj.username === "string") {
-          username = dataObj.username.trim();
-        }
-        if (Array.isArray(dataObj.password)) {
-          password = String((dataObj.password[0] || "").trim());
-        } else if (typeof dataObj.password === "string") {
-          password = dataObj.password.trim();
-        }
+        if (Array.isArray(dataObj.username)) username = String((dataObj.username[0] || "").trim());
+        else if (typeof dataObj.username === "string") username = dataObj.username.trim();
+        if (Array.isArray(dataObj.password)) password = String((dataObj.password[0] || "").trim());
+        else if (typeof dataObj.password === "string") password = dataObj.password.trim();
       }
     }
 
@@ -129,7 +123,7 @@ io.on("connection", (socket) => {
     );
   });
 
-  // CREAR SALA
+  // CREAR SALA (igual que antes)
   socket.on("CreateRoomRequest", (data) => {
     const user = loggedUsers.get(socket.id);
     if (!user) {
@@ -167,20 +161,18 @@ io.on("connection", (socket) => {
       }
     );
   });
-  
-  // Unirse a sala: asignación de roles por socket.id (primeros 2 -> player)
+
+  // UNIRSE A SALA: los dos primeros usuarios LOGEADOS son players
   socket.on("JoinRoomRequest", (arg1, arg2) => {
     let roomId = 0;
+
     if (typeof arg1 === "number") roomId = arg1;
     else if (typeof arg1 === "string") {
       const n = Number(arg1);
       if (isFinite(n) && n > 0) roomId = n;
       else {
-        try {
-          const o = JSON.parse(arg1);
-          const raw = o && o.roomId;
-          roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
-        } catch { roomId = 0; }
+        try { const o = JSON.parse(arg1); const raw = o && o.roomId; roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw); }
+        catch { roomId = 0; }
       }
     } else if (Array.isArray(arg1)) {
       const f = arg1[0];
@@ -197,125 +189,156 @@ io.on("connection", (socket) => {
 
     socket.join(roomChannel(roomId));
 
+    const user = loggedUsers.get(socket.id); // solo web logeado cuenta como player
     const game = ensureRoom(roomId);
     let role = "spectator";
-    if (game.players.size < 2 && !game.players.has(socket.id)) {
-      game.players.add(socket.id);
-      role = "player";
+
+    if (user) {
+      const userId = user.id;
+      if (!game.players.has(userId) && game.players.size < 2) {
+        game.players.add(userId);
+        role = "player";
+
+        // Crear engine para este player si no existe aún
+        if (!game.engines.has(userId)) {
+          const engine = new NodeGridColumnsServer({ tickMs: 500 });
+          game.engines.set(userId, { engine, started: false, username: user.username });
+
+          // Emitir setupGrid al canal (contrato NodeGrid)
+          engine.onSetup = function (gridSetup) {
+            io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(gridSetup));
+            console.log(`[EMIT setupGrid] room=${roomId} playerId=${gridSetup.playerId}`);
+          };
+          // Emitir updateGrid periódicamente
+          engine.onUpdate = function (gridUpdate) {
+            io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(gridUpdate));
+          };
+          engine.onEnd = function () {};
+
+          // Inicializar grid para este player (servidor decide tamaño y nombres)
+          engine.provideSetup({
+            playerId: userId,
+            playerName: user.username,
+            sizeX: 6,
+            sizeY: 12
+          });
+        }
+      }
     }
 
-    // Si ya hay 2 jugadores en sala, estado RUNNING (los engines arrancarán al recibir setup)
+    // Si ya hay 2 players y aún no corre, arrancar motores de ambos
     if (game.players.size >= 2 && game.status === "WAITING") {
       game.status = "RUNNING";
+      console.log(`[ROOM RUNNING] room=${roomId} starting engines for players: ${Array.from(game.players).join(",")}`);
+      game.players.forEach(pid => {
+        const rec = game.engines.get(pid);
+        if (rec && !rec.started && rec.engine && rec.engine.sizeX > 0) {
+          rec.started = true;
+          try {
+            rec.engine.start();
+            console.log(`[ENGINE START] room=${roomId} playerId=${pid}`);
+          } catch (e) {
+            console.error(`[ENGINE START ERROR] room=${roomId} playerId=${pid}`, e);
+          }
+        }
+      });
     }
 
     socket.emit("JoinRoomResponse", { status: "success", roomId, role });
 
-    // Mensajes (igual que tenías)
-    bddConnection.query(`CALL ${PROC.GET_ROOM_MESSAGES}(?);`, [roomId], (err, results) => {
-      if (err) return;
-      const rows = results[0] || [];
-      const formatted = rows.map(msg => ({ username: msg.username, text: msg.text, createDate: msg.createDate }));
-      socket.emit("ServerResponseRequestMessageListToClient", formatted);
-    });
+    // Historial de mensajes
+    bddConnection.query(
+      `CALL ${PROC.GET_ROOM_MESSAGES}(?);`,
+      [roomId],
+      (err, results) => {
+        if (err) return;
+        const rows = results[0] || [];
+        const formatted = rows.map(msg => ({
+          username: msg.username,
+          text: msg.text,
+          createDate: msg.createDate
+        }));
+        socket.emit("ServerResponseRequestMessageListToClient", formatted);
+      }
+    );
   });
 
-  // El cliente C# envía su GridSetup (NodeGrid.GridSetup) por player
-  socket.on("GameProvideSetup", (payload) => {
-    let setupObj = payload;
-    try {
-      if (typeof setupObj === "string") setupObj = JSON.parse(setupObj);
-    } catch (e) {
-      console.error("[GameProvideSetup] JSON parse error:", e);
-      return;
-    }
-
-    // Localizar la sala: preferimos roomId en payload; si no, inferimos desde socket.rooms
-    const explicitRoom = setupObj.roomId || setupObj.RoomId || setupObj.room_id;
-    let roomId = explicitRoom ? Number(explicitRoom) : 0;
-    if (!roomId) {
-      const rooms = Array.from(socket.rooms || []);
-      const r = rooms.find(rn => rn.startsWith("room_"));
-      if (r) roomId = Number(r.split("_")[1]);
-    }
-    if (!roomId || !isFinite(roomId) || roomId <= 0) {
-      console.warn("[GameProvideSetup] cannot determine roomId; ignoring");
-      return;
-    }
-
-    const game = ensureRoom(roomId);
-
-    // Solo aceptar setups de sockets que son players
-    if (!game.players.has(socket.id)) {
-      console.warn("[GameProvideSetup] setup from spectator ignored");
-      return;
-    }
-
-    // Clave de player: usar el playerId que el cliente C# define en su GridSetup (o fallback a socket.id)
-    const playerKey = Number.isFinite(setupObj.playerId) ? String(setupObj.playerId) : socket.id;
-
-    // Crear engine si no existe para este player
-    let rec = game.engines.get(playerKey);
-    if (!rec) {
-      const engine = new NodeGridColumnsServer();
-      rec = { engine, started: false, socketId: socket.id };
-      game.engines.set(playerKey, rec);
-
-      // Emitir a toda la sala usando contrato NodeGrid
-      engine.onSetup = function (gridSetup) {
-        io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(gridSetup));
-      };
-      engine.onUpdate = function (gridUpdate) {
-        io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(gridUpdate));
-      };
-      engine.onEnd = function () {
-        // opcional: marcar estado
-      };
-    }
-
-    // Aplicar setup en el motor del player
-    try {
-      rec.engine.provideSetup({
-        playerId: Number(setupObj.playerId || 0),
-        playerName: String(setupObj.playerName || "P1"),
-        sizeX: Number(setupObj.sizeX),
-        sizeY: Number(setupObj.sizeY)
+  // ENVIAR MENSAJE (igual)
+  socket.on("ClientMessageToServer", (messageData) => {
+    const user = loggedUsers.get(socket.id);
+    if (!user) {
+      socket.emit("ServerMessageToClient", {
+        status: "error",
+        message: "Not authenticated",
       });
-    } catch (e) {
-      console.error("[GameProvideSetup] provideSetup error:", e);
       return;
     }
 
-    // Arrancar el engine de este player si la sala está en RUNNING y aún no arrancó
-    const readyToRun = (game.status === "RUNNING" && game.players.size >= 2);
-    if (readyToRun && !rec.started) {
-      rec.started = true;
-      rec.engine.start();
+    const { roomId, content } = messageData || {};
+    if (!roomId || !content || typeof content !== "string") {
+      socket.emit("ServerMessageToClient", {
+        status: "error",
+        message: "roomId and content are required",
+      });
+      return;
     }
+
+    bddConnection.query(
+      `CALL ${PROC.ADD_MESSAGE}(?, ?, ?);`,
+      [roomId, user.id, content],
+      (err) => {
+        if (err) {
+          console.error("Error calling AddMessage:", err);
+          socket.emit("ServerMessageToClient", {
+            status: "error",
+            message: "DB error inserting message",
+          });
+          return;
+        }
+
+        const messageToSend = {
+          username: user.username,
+          text: content,
+          created_at: new Date(),
+          room_id: roomId
+        };
+
+        io.to(roomChannel(roomId)).emit("ServerMessageToClient", messageToSend);
+      }
+    );
   });
 
-  // Limpieza: liberar huecos de player y parar engines asociados si quieres
+  // LOGOUT y desconexión: liberar huecos y parar motores de ese player
+  socket.on("LogoutRequest", () => {
+    const user = loggedUsers.get(socket.id);
+    if (user) {
+      loggedUsers.delete(socket.id);
+    }
+    socket.emit("LogoutResponse", { status: "success" });
+  });
+
+  emitRoomsToSocket(socket);
+
   socket.on("disconnect", () => {
-    roomGames.forEach((game, rid) => {
-      if (game.players.delete(socket.id)) {
-        // Opcional: detener engines de ese player
-        for (const [key, rec] of game.engines.entries()) {
-          if (rec.socketId === socket.id) {
+    const user = loggedUsers.get(socket.id);
+    if (user) {
+      // Liberar player y detener motor de su grid
+      roomGames.forEach((game, rid) => {
+        if (game.players.delete(user.id)) {
+          const rec = game.engines.get(user.id);
+          if (rec) {
             try { rec.engine.stop(); } catch {}
-            game.engines.delete(key);
+            game.engines.delete(user.id);
+          }
+          if (game.players.size < 2 && game.status === "RUNNING") {
+            game.status = "WAITING";
           }
         }
-        if (game.players.size === 0) {
-          game.status = "WAITING";
-        }
-      }
-    });
-    const user = loggedUsers.get(socket.id);
-    if (user) loggedUsers.delete(socket.id);
+      });
+      loggedUsers.delete(socket.id);
+    }
+    console.log("Socket disconnected:", socket.id);
   });
-
-  // Al conectar, enviar listado de salas
-  emitRoomsToSocket(socket);
 });
 
 module.exports = router;

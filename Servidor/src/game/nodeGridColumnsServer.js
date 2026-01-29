@@ -15,21 +15,22 @@ const Jewel = {
 const JEWELS = [Jewel.Red, Jewel.Green, Jewel.Blue, Jewel.Yellow, Jewel.Orange, Jewel.Purple];
 
 class NodeGridColumnsServer {
-  constructor() {
+  constructor(opts) {
+    opts = opts || {};
+    this.tickMs = Number(opts.tickMs || 500);
     this.sizeX = 0;
     this.sizeY = 0;
     this.playerId = 0;
     this.playerName = "P1";
     this.grid = [];         // matriz [sizeX][sizeY] con JewelType
     this._interval = null;
-    this.tickMs = 500;
 
     this.onSetup = null;    // function(GridSetup)
     this.onUpdate = null;   // function(GridUpdate)
     this.onEnd = null;      // function()
   }
 
-  // Inicializa el grid a partir del GridSetup del cliente
+  // Inicializa el grid (servidor crea GridSetup para el cliente)
   provideSetup(gridSetup) {
     if (!gridSetup || !Number.isFinite(gridSetup.sizeX) || !Number.isFinite(gridSetup.sizeY)) {
       throw new Error("Invalid GridSetup");
