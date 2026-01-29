@@ -208,36 +208,38 @@ public class NodeGrid : MonoBehaviour
     {
         //The code shown below is an example of how to convert GridUpdate objects to JSON and vice versa.
 
-        SetupGrid(new()
-        {
-            playerId = 0,
-            playerName = "P1",
-            sizeX = 6,
-            sizeY = 12
-        });
+        //Debug.Log("CREATED WITH START EXAMPLE IN NODE GRID.cs");
 
-        string json = JsonUtility.ToJson(_grid);
+        //SetupGrid(new()
+        //{
+        //    playerId = 0,
+        //    playerName = "P1",
+        //    sizeX = 6,
+        //    sizeY = 12
+        //});
 
-        Debug.Log(json);
+        //string json = JsonUtility.ToJson(_grid);
 
-        Grid g = JsonUtility.FromJson<Grid>(json);
+        //Debug.Log(json);
 
-        GridUpdate update = new()
-        {
-            playerId = 0,
-            playerName = "P1",
-            updatedNodes = new()
-        };
+        //Grid g = JsonUtility.FromJson<Grid>(json);
 
-        update.updatedNodes.Add(new Node(Node.JewelType.Red, 0, 1));
-        update.updatedNodes.Add(new Node(Node.JewelType.Green, 0, 2));
-        update.updatedNodes.Add(new Node(Node.JewelType.Blue, 0, 3));
-        update.updatedNodes.Add(new Node(Node.JewelType.None, 0, 4));
+        //GridUpdate update = new()
+        //{
+        //    playerId = 0,
+        //    playerName = "P1",
+        //    updatedNodes = new()
+        //};
 
-        string json2 = JsonUtility.ToJson(update);
+        //update.updatedNodes.Add(new Node(Node.JewelType.Red, 0, 1));
+        //update.updatedNodes.Add(new Node(Node.JewelType.Green, 0, 2));
+        //update.updatedNodes.Add(new Node(Node.JewelType.Blue, 0, 3));
+        //update.updatedNodes.Add(new Node(Node.JewelType.None, 0, 4));
 
-        Debug.Log(json2);
+        //string json2 = JsonUtility.ToJson(update);
 
-        GridUpdate update2 = JsonUtility.FromJson<GridUpdate>(json2);
+        //Debug.Log(json2);
+
+        //GridUpdate update2 = JsonUtility.FromJson<GridUpdate>(json2);
     }
 }
