@@ -4,61 +4,36 @@ const path = require("path");
 
 const io = app.get("io");
 const bddConnection = app.get("bdd");
-const { NodeGridColumnsServer } = require("../../game/nodeGridColumnsServer"); // [ADD]
+const { NodeGridColumnsServer } = require("../../game/nodeGridColumnsServer");
 
-// Nombres de los procedures
-const PROC = {
-  GET_ROOMS: "GetRooms",
-  CREATE_ROOM: "CreateRoom",
-  GET_ROOM_MESSAGES: "GetRoomMessages",
-  ADD_MESSAGE: "AddMessage"
-};
-
+const PROC = { GET_ROOMS:"GetRooms", CREATE_ROOM:"CreateRoom", GET_ROOM_MESSAGES:"GetRoomMessages", ADD_MESSAGE:"AddMessage" };
 const loggedUsers = new Map(); // socket.id -> { id, username }
 const roomChannel = (roomId) => `room_${roomId}`;
 
-// Estado por sala: dos grids (máximo) y players logeados
-// roomId -> { status:'WAITING'|'RUNNING'|'ENDED', players:Set<userId>, engines: Map<userId,{engine,started,username}> }
+// roomId -> { status, players:Set<userId>, engines: Map<userId,{engine,started,username}> }
 const roomGames = new Map();
-
 function ensureRoom(roomId) {
   let game = roomGames.get(roomId);
   if (game) return game;
-  game = {
-    status: "WAITING",
-    players: new Set(),
-    engines: new Map()
-  };
+  game = { status:"WAITING", players:new Set(), engines:new Map() };
   roomGames.set(roomId, game);
   return game;
 }
 
-router.get("/", (req, res) => {
-  res.sendFile(path.resolve(__dirname + "/chat.html"));
-});
+router.get("/", (req, res) => res.sendFile(path.resolve(__dirname + "/chat.html")));
 
 function emitRoomsToSocket(socket) {
-  bddConnection.query(
-    "SELECT id, name FROM Rooms ORDER BY id DESC",
-    (err, rows) => {
-      if (err) {
-        console.error("Error fetching Rooms:", err);
-        socket.emit("ChatRoomsData", []);
-        return;
-      }
-      socket.emit("ChatRoomsData", rows);
-    }
-  );
+  bddConnection.query("SELECT id, name FROM Rooms ORDER BY id DESC", (err, rows) => {
+    if (err) { console.error("Error fetching Rooms:", err); socket.emit("ChatRoomsData", []); return; }
+    socket.emit("ChatRoomsData", rows);
+  });
 }
 
 io.on("connection", (socket) => {
-  const address = socket.request.connection;
-  console.log(
-    "Socket connected with ip:port --> " +
-      address.remoteAddress +
-      ":" +
-      address.remotePort
-  );
+  // Detect viewer
+  const q = socket.handshake.query || {};
+  socket.data = socket.data || {};
+  socket.data.isViewer = (q.viewer === "1");
 
   // LOGIN: admite 2 args (user, pass) o objeto/array
   socket.on("LoginRequest", (arg1, arg2) => {
@@ -162,24 +137,18 @@ io.on("connection", (socket) => {
     );
   });
 
-  // UNIRSE A SALA: los dos primeros usuarios LOGEADOS son players
+  // JOIN room: only logged web users become players; viewers are spectators
   socket.on("JoinRoomRequest", (arg1, arg2) => {
     let roomId = 0;
-
     if (typeof arg1 === "number") roomId = arg1;
     else if (typeof arg1 === "string") {
       const n = Number(arg1);
       if (isFinite(n) && n > 0) roomId = n;
-      else {
-        try { const o = JSON.parse(arg1); const raw = o && o.roomId; roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw); }
-        catch { roomId = 0; }
-      }
+      else { try { const o = JSON.parse(arg1); const raw = o && o.roomId; roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw); } catch { roomId = 0; } }
     } else if (Array.isArray(arg1)) {
-      const f = arg1[0];
-      roomId = typeof f === "number" ? f : (isFinite(Number(f)) ? Number(f) : 0);
+      const f = arg1[0]; roomId = typeof f === "number" ? f : (isFinite(Number(f)) ? Number(f) : 0);
     } else if (typeof arg1 === "object" && arg1) {
-      const raw = arg1.roomId;
-      roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
+      const raw = arg1.roomId; roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
     }
 
     if (!roomId || !isFinite(roomId) || roomId <= 0) {
@@ -189,81 +158,91 @@ io.on("connection", (socket) => {
 
     socket.join(roomChannel(roomId));
 
-    const user = loggedUsers.get(socket.id); // solo web logeado cuenta como player
+    const user = loggedUsers.get(socket.id);
     const game = ensureRoom(roomId);
     let role = "spectator";
 
-    if (user) {
+    // Assign player only if not viewer and logged in
+    if (!socket.data.isViewer && user) {
       const userId = user.id;
       if (!game.players.has(userId) && game.players.size < 2) {
         game.players.add(userId);
         role = "player";
 
-        // Crear engine para este player si no existe aún
         if (!game.engines.has(userId)) {
           const engine = new NodeGridColumnsServer({ tickMs: 500 });
           game.engines.set(userId, { engine, started: false, username: user.username });
 
-          // Emitir setupGrid al canal (contrato NodeGrid)
-          engine.onSetup = function (gridSetup) {
-            io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(gridSetup));
-            console.log(`[EMIT setupGrid] room=${roomId} playerId=${gridSetup.playerId}`);
-          };
-          // Emitir updateGrid periódicamente
-          engine.onUpdate = function (gridUpdate) {
-            io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(gridUpdate));
-          };
-          engine.onEnd = function () {};
+          engine.onSetup = (gridSetup) => io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(gridSetup));
+          engine.onUpdate = (gridUpdate) => io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(gridUpdate));
 
-          // Inicializar grid para este player (servidor decide tamaño y nombres)
-          engine.provideSetup({
-            playerId: userId,
-            playerName: user.username,
-            sizeX: 6,
-            sizeY: 12
-          });
+          engine.provideSetup({ playerId: userId, playerName: user.username, sizeX: 6, sizeY: 12 });
         }
       }
     }
 
-    // Si ya hay 2 players y aún no corre, arrancar motores de ambos
+    // Start both engines when 2 players present
     if (game.players.size >= 2 && game.status === "WAITING") {
       game.status = "RUNNING";
-      console.log(`[ROOM RUNNING] room=${roomId} starting engines for players: ${Array.from(game.players).join(",")}`);
       game.players.forEach(pid => {
         const rec = game.engines.get(pid);
         if (rec && !rec.started && rec.engine && rec.engine.sizeX > 0) {
           rec.started = true;
-          try {
-            rec.engine.start();
-            console.log(`[ENGINE START] room=${roomId} playerId=${pid}`);
-          } catch (e) {
-            console.error(`[ENGINE START ERROR] room=${roomId} playerId=${pid}`, e);
-          }
+          try { rec.engine.start(); } catch (e) { console.error(e); }
         }
       });
     }
 
     socket.emit("JoinRoomResponse", { status: "success", roomId, role });
 
-    // Historial de mensajes
-    bddConnection.query(
-      `CALL ${PROC.GET_ROOM_MESSAGES}(?);`,
-      [roomId],
-      (err, results) => {
-        if (err) return;
-        const rows = results[0] || [];
-        const formatted = rows.map(msg => ({
-          username: msg.username,
-          text: msg.text,
-          createDate: msg.createDate
-        }));
-        socket.emit("ServerResponseRequestMessageListToClient", formatted);
+    // Send setup + full snapshot to the newly joined socket (players and viewers)
+    for (const [pid, rec] of game.engines.entries()) {
+      try {
+        const setup = { playerId: rec.engine.playerId, playerName: rec.engine.playerName, sizeX: rec.engine.sizeX, sizeY: rec.engine.sizeY };
+        socket.emit("setupGrid", JSON.stringify(setup));
+        const fullUpdate = rec.engine.getFullUpdate();
+        socket.emit("updateGrid", JSON.stringify(fullUpdate));
+      } catch (e) {
+        console.error("[JoinRoom] emit setup/fullUpdate error:", e);
       }
-    );
+    }
+
+    // Messages (unchanged)
+    bddConnection.query(`CALL ${PROC.GET_ROOM_MESSAGES}(?);`, [roomId], (err, results) => {
+      if (err) return;
+      const rows = results[0] || [];
+      socket.emit("ServerResponseRequestMessageListToClient", rows.map(msg => ({ username: msg.username, text: msg.text, createDate: msg.createDate })));
+    });
   });
 
-  // ENVIAR MENSAJE (igual)
+  // NEW: player keyboard input from web client
+  socket.on("GameInput", (payload) => {
+  let obj = payload;
+    try { if (typeof obj === "string") obj = JSON.parse(obj); } catch { console.warn("[GameInput] JSON inválido"); return; }
+
+    const user = loggedUsers.get(socket.id);
+    if (!user) { console.log("[GameInput] ignorado: socket no logeado"); return; }
+
+    const roomId = Number(obj.roomId);
+    const action = String(obj.action || "");
+    if (!roomId || !action) { console.log("[GameInput] faltan parámetros"); return; }
+
+    const game = roomGames.get(roomId);
+    if (!game) { console.log("[GameInput] no hay juego en sala", roomId); return; }
+
+    if (!game.players.has(user.id)) { console.log("[GameInput] usuario", user.id, "no es player en sala", roomId); return; }
+
+    const rec = game.engines.get(user.id);
+    if (!rec) { console.log("[GameInput] sin engine para player", user.id); return; }
+
+    const allowed = new Set(["left", "right", "rotate", "softDropStart", "softDropEnd"]);
+    if (!allowed.has(action)) { console.log("[GameInput] acción no permitida:", action); return; }
+
+    console.log("[GameInput] user", user.id, "room", roomId, "action", action);
+    try { rec.engine.applyInput(action); } catch (e) { console.error("[GameInput] error apply:", e); }
+  });
+
+  // ENVIAR MENSAJE (igual)  
   socket.on("ClientMessageToServer", (messageData) => {
     const user = loggedUsers.get(socket.id);
     if (!user) {

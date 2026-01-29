@@ -149,9 +149,12 @@
             socket.emit("JoinRoomRequest", { roomId: roomId });
         }
 
+        let isPlayer = false;
+
         socket.on("JoinRoomResponse", (data) => {
             if(data.status === "success"){
                 currentRoomId = data.roomId;
+                isPlayer = (data.role === "player");
                 chatContainer.hidden = false;
                 currentRoomLabel.textContent = "Room #" + currentRoomId;
                 // CORRECTO: ahora sí pedimos mensajes con roomId
@@ -181,6 +184,39 @@
 
         // Eliminar emisión legacy sin roomId:
         // socket.emit("ClientRequestMessageListToServer");
+
+        // Keyboard input for players
+        document.addEventListener("keydown", function (e) {
+        if (!isPlayer || !currentRoomId) return;
+
+        // If chat input focused, don't capture gameplay keys
+        const active = document.activeElement;
+        if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+
+        let action = null;
+        switch (e.code) {
+            case "KeyA": action = "left"; break;           // move left
+            case "KeyD": action = "right"; break;          // move right
+            case "Space": action = "rotate"; break;        // change order of column jewels
+            case "KeyS": action = "softDropStart"; break;  // soft drop start
+        }
+        if (action) {
+            socket.emit("GameInput", { roomId: currentRoomId, action });
+            // Prevent default for Space to avoid page scroll
+            if (e.code === "Space") e.preventDefault();
+        }
+        });
+
+        document.addEventListener("keyup", function (e) {
+        if (!isPlayer || !currentRoomId) return;
+
+        const active = document.activeElement;
+        if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+
+        if (e.code === "KeyS") {
+            socket.emit("GameInput", { roomId: currentRoomId, action: "softDropEnd" });
+        }
+        });
 
         function TryLogin(){
             loginErrorMessage.textContent = "";
