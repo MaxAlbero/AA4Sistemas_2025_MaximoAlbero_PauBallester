@@ -156,11 +156,19 @@ public class ReplayMenu : MonoBehaviour
     {
         Debug.Log("[ReplayMenu] StartReplay id=" + replayId);
 
-        // Enviar número simple (no JObject) para evitar ambigüedades de serialización
+        // Limpiar y habilitar recepción de updates
+        if (gridViewer)
+        {
+            gridViewer.ClearAll();
+            // Habilita recepción para ver la replay (si la habías deshabilitado al salir de sala)
+            var viewerType = gridViewer.GetType();
+            var field = viewerType.GetField("_acceptUpdates", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field != null) field.SetValue(gridViewer, true);
+        }
+
         socket.EmitAsync("JoinReplayChannel", replayId);
         socket.EmitAsync("StartReplayRequest", replayId);
 
-        if (gridViewer) gridViewer.ClearAll();
         CloseMenu();
     }
 

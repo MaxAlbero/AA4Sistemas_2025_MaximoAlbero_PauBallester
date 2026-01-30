@@ -12,23 +12,25 @@ public class MultiGridViewer : MonoBehaviour
     public SocketConnector connector;
 
     [Header("Sala")]
-    public int roomId = 1;
+    public int initialRoomId = 0; // 0 = no unirse automáticamente
     public bool autoJoinFirstRoom = false;
 
     [Header("Slots del editor (opcional)")]
-    public Transform slotLeft;
     public Transform slotCenter;
+    public Transform slotLeft;
     public Transform slotRight;
 
     private SocketIOUnity socket;
     private readonly Dictionary<int, (GameObject wrapper, NodeGrid grid)> _grids = new();
     private readonly Queue<Action> _mainQueue = new();
 
+    public int CurrentRoomId { get; private set; } = 0;
+
+    // Nueva bandera: ignorar updates cuando no estamos viendo nada
+    private bool _acceptUpdates = true;
+
     private void EnqueueMain(Action a) { lock (_mainQueue) _mainQueue.Enqueue(a); }
-    private void Update()
-    {
-        lock (_mainQueue) { while (_mainQueue.Count > 0) _mainQueue.Dequeue()?.Invoke(); }
-    }
+    private void Update() { lock (_mainQueue) { while (_mainQueue.Count > 0) _mainQueue.Dequeue()?.Invoke(); } }
 
     private void Start()
     {
@@ -39,15 +41,15 @@ public class MultiGridViewer : MonoBehaviour
         socket.OnConnected += (s, e) =>
         {
             Debug.Log("[MultiGridViewer] Conectado como viewer");
-            if (!autoJoinFirstRoom && roomId > 0)
+            if (!autoJoinFirstRoom && initialRoomId > 0)
             {
-                Debug.Log("[MultiGridViewer] Uniendo a sala " + roomId);
-                socket.EmitAsync("JoinRoomRequest", roomId);
+                JoinRoom(initialRoomId);
             }
         };
 
         socket.On("ChatRoomsData", resp =>
         {
+            // Lo usa RoomsMenu; aquí no auto-join a menos que autoJoinFirstRoom
             if (!autoJoinFirstRoom) return;
             try
             {
@@ -56,12 +58,7 @@ public class MultiGridViewer : MonoBehaviour
                 if (arr.Count > 0)
                 {
                     var firstId = arr[0]["id"]?.Value<int>() ?? 0;
-                    if (firstId > 0)
-                    {
-                        roomId = firstId;
-                        Debug.Log("[MultiGridViewer] Auto-join sala " + roomId);
-                        socket.EmitAsync("JoinRoomRequest", roomId);
-                    }
+                    if (firstId > 0) JoinRoom(firstId);
                 }
             }
             catch (Exception ex)
@@ -74,12 +71,23 @@ public class MultiGridViewer : MonoBehaviour
         {
             var raw = ExtractPayloadString(resp);
             Debug.Log("[MultiGridViewer] JoinRoomResponse: " + raw);
+            try
+            {
+                var tok = JToken.Parse(raw);
+                var status = tok["status"]?.Value<string>() ?? "error";
+                if (status == "success")
+                {
+                    var roomId = tok["roomId"]?.Value<int>() ?? 0;
+                    CurrentRoomId = roomId;
+                }
+            }
+            catch { }
         });
 
         socket.On("setupGrid", resp =>
         {
+            if (!_acceptUpdates) return; // IGNORA si no estás viendo ninguna sala/replay
             var json = ExtractPayloadString(resp);
-            Debug.Log("[MultiGridViewer] setupGrid: " + json);
             var setup = JsonUtility.FromJson<NodeGrid.GridSetup>(json);
             EnqueueMain(() =>
             {
@@ -92,6 +100,7 @@ public class MultiGridViewer : MonoBehaviour
 
         socket.On("updateGrid", resp =>
         {
+            if (!_acceptUpdates) return; // IGNORA si no estás viendo ninguna sala/replay
             var json = ExtractPayloadString(resp);
             var update = JsonUtility.FromJson<NodeGrid.GridUpdate>(json);
             EnqueueMain(() =>
@@ -103,11 +112,38 @@ public class MultiGridViewer : MonoBehaviour
                 else
                 {
                     EnsureGridForPlayer(update.playerId);
-                    Debug.LogWarning("[MultiGridViewer] update para playerId desconocido: " + update.playerId);
                     UpdateLayout();
                 }
             });
         });
+    }
+
+    public void JoinRoom(int roomId)
+    {
+        Debug.Log("[MultiGridViewer] JoinRoom " + roomId);
+        _acceptUpdates = true;          // habilita recepción
+        socket.EmitAsync("JoinRoomRequest", roomId);
+    }
+
+    public void LeaveRoom()
+    {
+        Debug.Log("[MultiGridViewer] LeaveRoom " + CurrentRoomId);
+
+        // Deshabilita recepción y limpia SIEMPRE la vista
+        _acceptUpdates = false;
+        ClearAll();
+
+        // Sólo emite al servidor si realmente estabas en una sala
+        if (CurrentRoomId > 0)
+        {
+            int roomIdToLeave = CurrentRoomId;
+            CurrentRoomId = 0;
+            socket.EmitAsync("LeaveRoomRequest", roomIdToLeave);
+        }
+        else
+        {
+            CurrentRoomId = 0;
+        }
     }
 
     public void ClearAll()
@@ -119,13 +155,19 @@ public class MultiGridViewer : MonoBehaviour
             if (wrap) Destroy(wrap);
             _grids.Remove(pid);
         }
+
+        // Extra robustez: limpia cualquier hijo residual bajo el viewer
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            var child = transform.GetChild(i);
+            Destroy(child.gameObject);
+        }
     }
 
     private void EnsureGridForPlayer(int playerId)
     {
         if (_grids.ContainsKey(playerId)) return;
         var wrapper = new GameObject($"GridWrapper_{playerId}");
-        // Por defecto al centro
         if (slotCenter != null) wrapper.transform.SetParent(slotCenter, false);
         else wrapper.transform.SetParent(this.transform, false);
         wrapper.transform.localPosition = Vector3.zero;
