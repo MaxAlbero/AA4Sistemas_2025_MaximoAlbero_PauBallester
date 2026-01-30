@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 using SocketIOClient;
@@ -7,55 +8,44 @@ using Newtonsoft.Json.Linq;
 
 public class MultiGridViewer : MonoBehaviour
 {
-    [Header("Server")]
-    public string serverUrlLink = "http://localhost:3000";
-    public int roomId = 1; // set to the room you want to visualize
-    public bool autoJoinFirstRoom = false; // true to join the first room from ChatRoomsData
+    [Header("Referencias")]
+    public SocketConnector connector;
 
-    [SerializeField] GameObject gridParent;
+    [Header("Sala")]
+    public int roomId = 1;
+    public bool autoJoinFirstRoom = false;
+
+    [Header("Slots del editor (opcional)")]
+    public Transform slotLeft;
+    public Transform slotCenter;
+    public Transform slotRight;
 
     private SocketIOUnity socket;
-
-    // playerId -> NodeGrid
-    private readonly Dictionary<int, NodeGrid> gridsByPlayer = new();
-
-    // Simple main-thread dispatcher
+    private readonly Dictionary<int, (GameObject wrapper, NodeGrid grid)> _grids = new();
     private readonly Queue<Action> _mainQueue = new();
 
-    private void EnqueueMain(Action a)
-    {
-        lock (_mainQueue) _mainQueue.Enqueue(a);
-    }
-
+    private void EnqueueMain(Action a) { lock (_mainQueue) _mainQueue.Enqueue(a); }
     private void Update()
     {
-        lock (_mainQueue)
-        {
-            while (_mainQueue.Count > 0) _mainQueue.Dequeue()?.Invoke();
-        }
+        lock (_mainQueue) { while (_mainQueue.Count > 0) _mainQueue.Dequeue()?.Invoke(); }
     }
 
     private void Start()
     {
-        var uri = new Uri(serverUrlLink);
-        var opts = new SocketIOOptions
-        {
-            Query = new Dictionary<string, string> { ["viewer"] = "1" } // mark as spectator
-        };
-        socket = new SocketIOUnity(uri, opts);
+        if (connector == null) { Debug.LogError("[MultiGridViewer] Falta SocketConnector"); return; }
+        connector.EnsureConnected();
+        socket = connector.Socket;
 
         socket.OnConnected += (s, e) =>
         {
-            Debug.Log("[MultiGridViewer] Connected as viewer");
-            // If we know the roomId, join it now; otherwise wait for ChatRoomsData
+            Debug.Log("[MultiGridViewer] Conectado como viewer");
             if (!autoJoinFirstRoom && roomId > 0)
             {
-                Debug.Log("[MultiGridViewer] Joining room " + roomId);
+                Debug.Log("[MultiGridViewer] Uniendo a sala " + roomId);
                 socket.EmitAsync("JoinRoomRequest", roomId);
             }
         };
 
-        // Rooms list (if you want to auto-join first room)
         socket.On("ChatRoomsData", resp =>
         {
             if (!autoJoinFirstRoom) return;
@@ -69,72 +59,102 @@ public class MultiGridViewer : MonoBehaviour
                     if (firstId > 0)
                     {
                         roomId = firstId;
-                        Debug.Log("[MultiGridViewer] Auto-joining first room " + roomId);
+                        Debug.Log("[MultiGridViewer] Auto-join sala " + roomId);
                         socket.EmitAsync("JoinRoomRequest", roomId);
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[MultiGridViewer] ChatRoomsData parse warning: " + ex.Message);
+                Debug.LogWarning("[MultiGridViewer] Parse ChatRoomsData: " + ex.Message);
             }
         });
 
-        // Join confirmation
         socket.On("JoinRoomResponse", resp =>
         {
             var raw = ExtractPayloadString(resp);
             Debug.Log("[MultiGridViewer] JoinRoomResponse: " + raw);
         });
 
-        // Game setup per player
         socket.On("setupGrid", resp =>
         {
             var json = ExtractPayloadString(resp);
-            Debug.Log("[MultiGridViewer] setupGrid payload: " + json);
+            Debug.Log("[MultiGridViewer] setupGrid: " + json);
             var setup = JsonUtility.FromJson<NodeGrid.GridSetup>(json);
-
             EnqueueMain(() =>
             {
-                if (!gridsByPlayer.TryGetValue(setup.playerId, out var grid))
-                {
-                    var go = new GameObject($"Grid_{setup.playerId}");
-                    // Position left/right or stacked so both grids are visible
-                    var offsetX = (setup.playerId % 2 == 0) ? -5f : 5f;
-                    go.transform.position = new Vector3(offsetX, 0f, 0f);
-                    grid = go.AddComponent<NodeGrid>();
-                    gridsByPlayer[setup.playerId] = grid;
-                }
+                EnsureGridForPlayer(setup.playerId);
+                var (wrapper, grid) = _grids[setup.playerId];
                 grid.SetupGrid(setup);
-
-                grid.transform.SetParent(gridParent.transform);
+                UpdateLayout();
             });
         });
 
-        // Game updates per player
         socket.On("updateGrid", resp =>
         {
             var json = ExtractPayloadString(resp);
-            // Optional: log once to confirm events flow; comment later to reduce noise
-            // Debug.Log("[MultiGridViewer] updateGrid payload: " + json);
-
             var update = JsonUtility.FromJson<NodeGrid.GridUpdate>(json);
-
             EnqueueMain(() =>
             {
-                if (gridsByPlayer.TryGetValue(update.playerId, out var grid))
+                if (_grids.TryGetValue(update.playerId, out var pair))
                 {
-                    grid.UpdateGrid(update);
+                    pair.grid.UpdateGrid(update);
                 }
                 else
                 {
-                    // Late spectator: grid not created yet? Request a re-setup or wait for next setup/full snapshot
-                    Debug.LogWarning("[MultiGridViewer] update for unknown playerId=" + update.playerId);
+                    EnsureGridForPlayer(update.playerId);
+                    Debug.LogWarning("[MultiGridViewer] update para playerId desconocido: " + update.playerId);
+                    UpdateLayout();
                 }
             });
         });
+    }
 
-        socket.Connect();
+    public void ClearAll()
+    {
+        var keys = new List<int>(_grids.Keys);
+        foreach (var pid in keys)
+        {
+            var wrap = _grids[pid].wrapper;
+            if (wrap) Destroy(wrap);
+            _grids.Remove(pid);
+        }
+    }
+
+    private void EnsureGridForPlayer(int playerId)
+    {
+        if (_grids.ContainsKey(playerId)) return;
+        var wrapper = new GameObject($"GridWrapper_{playerId}");
+        // Por defecto al centro
+        if (slotCenter != null) wrapper.transform.SetParent(slotCenter, false);
+        else wrapper.transform.SetParent(this.transform, false);
+        wrapper.transform.localPosition = Vector3.zero;
+
+        var gridGo = new GameObject($"Grid_{playerId}");
+        gridGo.transform.SetParent(wrapper.transform, false);
+
+        var grid = gridGo.AddComponent<NodeGrid>();
+        _grids[playerId] = (wrapper, grid);
+    }
+
+    private void UpdateLayout()
+    {
+        int count = _grids.Count;
+        if (count == 0) return;
+
+        if (count == 1)
+        {
+            var only = _grids.Values.First().wrapper;
+            if (slotCenter) { only.transform.SetParent(slotCenter, false); only.transform.localPosition = Vector3.zero; }
+        }
+        else if (count == 2)
+        {
+            var ordered = _grids.Keys.OrderBy(k => k).ToArray();
+            var leftWrap = _grids[ordered[0]].wrapper;
+            var rightWrap = _grids[ordered[1]].wrapper;
+            if (slotLeft) { leftWrap.transform.SetParent(slotLeft, false); leftWrap.transform.localPosition = Vector3.zero; }
+            if (slotRight) { rightWrap.transform.SetParent(slotRight, false); rightWrap.transform.localPosition = Vector3.zero; }
+        }
     }
 
     private string ExtractPayloadString(SocketIOResponse response)
@@ -142,11 +162,7 @@ public class MultiGridViewer : MonoBehaviour
         try { return response.GetValue<string>(); }
         catch
         {
-            try
-            {
-                var token = response.GetValue<JToken>();
-                return token.ToString(Newtonsoft.Json.Formatting.None);
-            }
+            try { return response.GetValue<JToken>().ToString(Newtonsoft.Json.Formatting.None); }
             catch { return response.ToString(); }
         }
     }
