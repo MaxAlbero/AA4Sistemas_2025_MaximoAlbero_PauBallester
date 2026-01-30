@@ -246,8 +246,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 660, y: 402}
-  m_SizeDelta: {x: 160, y: 30}
+  m_AnchoredPosition: {x: 860, y: 420.91}
+  m_SizeDelta: {x: 160, y: 67.83}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &119988182
 MonoBehaviour:
@@ -367,8 +367,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 767, y: 124}
-  m_SizeDelta: {x: 160, y: 30}
+  m_AnchoredPosition: {x: 851, y: 122.66}
+  m_SizeDelta: {x: 160, y: 86.17}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &170205385
 MonoBehaviour:
@@ -497,7 +497,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 254186520}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 59f8146938fff824cb5fd77236b75775, type: 3}
+  m_Script: {fileID: 11500000, guid: 8a8695521f0d02e499659fee002a26c2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   m_Padding:
@@ -506,14 +506,12 @@ MonoBehaviour:
     m_Top: 0
     m_Bottom: 0
   m_ChildAlignment: 4
-  m_Spacing: 0
-  m_ChildForceExpandWidth: 1
-  m_ChildForceExpandHeight: 1
-  m_ChildControlWidth: 0
-  m_ChildControlHeight: 0
-  m_ChildScaleWidth: 0
-  m_ChildScaleHeight: 0
-  m_ReverseArrangement: 0
+  m_StartCorner: 0
+  m_StartAxis: 0
+  m_CellSize: {x: 200, y: 200}
+  m_Spacing: {x: 0, y: 0}
+  m_Constraint: 1
+  m_ConstraintCount: 4
 --- !u!1 &279723118
 GameObject:
   m_ObjectHideFlags: 0
@@ -886,8 +884,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 764, y: 224}
-  m_SizeDelta: {x: 160, y: 30}
+  m_AnchoredPosition: {x: 845, y: 242.27}
+  m_SizeDelta: {x: 177.02, y: 66.55}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &497627151
 MonoBehaviour:
@@ -1240,8 +1238,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 862, y: -481}
-  m_SizeDelta: {x: 160, y: 30}
+  m_AnchoredPosition: {x: 862, y: 10}
+  m_SizeDelta: {x: 160, y: 60.96}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &640165338
 MonoBehaviour:
@@ -1394,7 +1392,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Close
+  m_text: "Close \nReplays List"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -1587,8 +1585,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 695, y: 482}
-  m_SizeDelta: {x: 160, y: 30}
+  m_AnchoredPosition: {x: 865, y: 426.35}
+  m_SizeDelta: {x: 160, y: 59.72}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &776709174
 MonoBehaviour:
@@ -1858,13 +1856,13 @@ RectTransform:
   - {fileID: 640165337}
   - {fileID: 497627150}
   - {fileID: 339340941}
+  - {fileID: 1561901206}
+  - {fileID: 749125156}
   - {fileID: 60830620}
   - {fileID: 852071018}
   - {fileID: 1702021630}
   - {fileID: 1930884665}
   - {fileID: 60145309}
-  - {fileID: 1561901206}
-  - {fileID: 749125156}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -2297,7 +2295,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 1664739755}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 59f8146938fff824cb5fd77236b75775, type: 3}
+  m_Script: {fileID: 11500000, guid: 8a8695521f0d02e499659fee002a26c2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   m_Padding:
@@ -2305,15 +2303,13 @@ MonoBehaviour:
     m_Right: 0
     m_Top: 0
     m_Bottom: 0
-  m_ChildAlignment: 1
-  m_Spacing: 0
-  m_ChildForceExpandWidth: 1
-  m_ChildForceExpandHeight: 1
-  m_ChildControlWidth: 0
-  m_ChildControlHeight: 0
-  m_ChildScaleWidth: 0
-  m_ChildScaleHeight: 0
-  m_ReverseArrangement: 0
+  m_ChildAlignment: 4
+  m_StartCorner: 0
+  m_StartAxis: 0
+  m_CellSize: {x: 200, y: 200}
+  m_Spacing: {x: 0, y: 0}
+  m_Constraint: 1
+  m_ConstraintCount: 3
 --- !u!1 &1702021629
 GameObject:
   m_ObjectHideFlags: 0
@@ -2441,7 +2437,9 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Open
+  m_text: 'Open
+
+    Replays List'
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
