@@ -6,16 +6,27 @@ const io = app.get("io");
 const bddConnection = app.get("bdd");
 const { NodeGridColumnsServer } = require("../../game/nodeGridColumnsServer");
 
-const PROC = { GET_ROOMS:"GetRooms", CREATE_ROOM:"CreateRoom", GET_ROOM_MESSAGES:"GetRoomMessages", ADD_MESSAGE:"AddMessage" };
-const loggedUsers = new Map(); // socket.id -> { id, username }
+const PROC = {
+  GET_ROOMS:"GetRooms",
+  CREATE_ROOM:"CreateRoom",
+  GET_ROOM_MESSAGES:"GetRoomMessages",
+  ADD_MESSAGE:"AddMessage",
+  CREATE_REPLAY:"CreateReplay",
+  ADD_REPLAY_PLAYER:"AddReplayPlayer",
+  ADD_REPLAY_INPUT:"AddReplayInput",
+  LIST_REPLAYS_FOR_ROOM: "ListReplaysForRoom"
+};
+
+const loggedUsers = new Map();
 const roomChannel = (roomId) => `room_${roomId}`;
 
-// roomId -> { status, players:Set<userId>, engines: Map<userId,{engine,started,username}> }
+// roomId -> { status, players:Set<userId>, engines: Map<userId,{engine,started,username}>, replay?: { id, seed, startMs, seq } }
 const roomGames = new Map();
+
 function ensureRoom(roomId) {
   let game = roomGames.get(roomId);
   if (game) return game;
-  game = { status:"WAITING", players:new Set(), engines:new Map() };
+  game = { status:"WAITING", players:new Set(), engines:new Map(), replay:null };
   roomGames.set(roomId, game);
   return game;
 }
@@ -30,7 +41,6 @@ function emitRoomsToSocket(socket) {
 }
 
 io.on("connection", (socket) => {
-  // Detect viewer
   const q = socket.handshake.query || {};
   socket.data = socket.data || {};
   socket.data.isViewer = (q.viewer === "1");
@@ -157,33 +167,65 @@ io.on("connection", (socket) => {
     }
 
     socket.join(roomChannel(roomId));
-
     const user = loggedUsers.get(socket.id);
     const game = ensureRoom(roomId);
     let role = "spectator";
 
-    // Assign player only if not viewer and logged in
     if (!socket.data.isViewer && user) {
       const userId = user.id;
       if (!game.players.has(userId) && game.players.size < 2) {
         game.players.add(userId);
         role = "player";
 
+        // Crear engine del player con semilla (si ya existe replay, usar su seed; si no, se asignará al arrancar)
+        const seed = (game.replay && game.replay.seed) || Math.random().toString(16).slice(2);
         if (!game.engines.has(userId)) {
-          const engine = new NodeGridColumnsServer({ tickMs: 500 });
-          game.engines.set(userId, { engine, started: false, username: user.username });
-
+          const engine = new NodeGridColumnsServer({ tickMs: 500, seed });
+          game.engines.set(userId, { engine, started:false, username:user.username });
           engine.onSetup = (gridSetup) => io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(gridSetup));
           engine.onUpdate = (gridUpdate) => io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(gridUpdate));
-
           engine.provideSetup({ playerId: userId, playerName: user.username, sizeX: 6, sizeY: 12 });
         }
       }
     }
 
-    // Start both engines when 2 players present
+    // Arrancar y crear Replay cuando hay 2 players
     if (game.players.size >= 2 && game.status === "WAITING") {
       game.status = "RUNNING";
+
+      // Semilla compartida para la partida (todos los engines usarán la misma)
+      const sharedSeed = Math.random().toString(16).slice(2);
+      // Actualizar semilla en engines ya creados
+      game.players.forEach(pid => {
+        const rec = game.engines.get(pid);
+        if (rec && rec.engine) {
+          rec.engine.seed = sharedSeed;
+          rec.engine._rng = rec.engine._mulberry32(rec.engine._hashSeed(sharedSeed));
+        }
+      });
+
+      // Crear Replay en BD
+      bddConnection.query(`CALL ${PROC.CREATE_REPLAY}(?, ?);`, [roomId, sharedSeed], (err, result) => {
+        if (err) { console.error("[Replay] Create error:", err); }
+        const replay_id = (result && result[0] && result[0][0] && result[0][0].replay_id) || null;
+        if (replay_id) {
+          // Guardar jugadores 0/1
+          let idx = 0;
+          game.players.forEach(pid => {
+            const rec = game.engines.get(pid);
+            bddConnection.query(
+              `CALL ${PROC.ADD_REPLAY_PLAYER}(?, ?, ?, ?);`,
+              [replay_id, pid, idx, (rec && rec.username) ? rec.username : `P${idx + 1}`],
+              () => {}
+            );
+            idx++;
+          });
+          // Registrar estado de replay en memoria
+          game.replay = { id: replay_id, seed: sharedSeed, startMs: Date.now(), seq: 0 };
+        }
+      });
+
+      // Arrancar motores
       game.players.forEach(pid => {
         const rec = game.engines.get(pid);
         if (rec && !rec.started && rec.engine && rec.engine.sizeX > 0) {
@@ -195,16 +237,13 @@ io.on("connection", (socket) => {
 
     socket.emit("JoinRoomResponse", { status: "success", roomId, role });
 
-    // Send setup + full snapshot to the newly joined socket (players and viewers)
-    for (const [pid, rec] of game.engines.entries()) {
+    // Re-emitir setup + snapshot al que se acaba de unir (players y viewers)
+    for (const [, rec] of game.engines.entries()) {
       try {
         const setup = { playerId: rec.engine.playerId, playerName: rec.engine.playerName, sizeX: rec.engine.sizeX, sizeY: rec.engine.sizeY };
         socket.emit("setupGrid", JSON.stringify(setup));
-        const fullUpdate = rec.engine.getFullUpdate();
-        socket.emit("updateGrid", JSON.stringify(fullUpdate));
-      } catch (e) {
-        console.error("[JoinRoom] emit setup/fullUpdate error:", e);
-      }
+        socket.emit("updateGrid", JSON.stringify(rec.engine.getFullUpdate()));
+      } catch (e) { console.error("[JoinRoom] emit setup/fullUpdate error:", e); }
     }
 
     // Messages (unchanged)
@@ -215,32 +254,43 @@ io.on("connection", (socket) => {
     });
   });
 
-  // NEW: player keyboard input from web client
+  // Inputs de jugador: aplicar y guardar en replay
   socket.on("GameInput", (payload) => {
-  let obj = payload;
-    try { if (typeof obj === "string") obj = JSON.parse(obj); } catch { console.warn("[GameInput] JSON inválido"); return; }
-
+    let obj = payload;
+    try { if (typeof obj === "string") obj = JSON.parse(obj); } catch { return; }
     const user = loggedUsers.get(socket.id);
-    if (!user) { console.log("[GameInput] ignorado: socket no logeado"); return; }
+    if (!user) return;
 
     const roomId = Number(obj.roomId);
     const action = String(obj.action || "");
-    if (!roomId || !action) { console.log("[GameInput] faltan parámetros"); return; }
+    if (!roomId || !action) return;
 
     const game = roomGames.get(roomId);
-    if (!game) { console.log("[GameInput] no hay juego en sala", roomId); return; }
-
-    if (!game.players.has(user.id)) { console.log("[GameInput] usuario", user.id, "no es player en sala", roomId); return; }
+    if (!game) return;
+    if (!game.players.has(user.id)) return;
 
     const rec = game.engines.get(user.id);
-    if (!rec) { console.log("[GameInput] sin engine para player", user.id); return; }
+    if (!rec) return;
 
     const allowed = new Set(["left", "right", "rotate", "softDropStart", "softDropEnd"]);
-    if (!allowed.has(action)) { console.log("[GameInput] acción no permitida:", action); return; }
+    if (!allowed.has(action)) return;
 
-    console.log("[GameInput] user", user.id, "room", roomId, "action", action);
-    try { rec.engine.applyInput(action); } catch (e) { console.error("[GameInput] error apply:", e); }
+    try { rec.engine.applyInput(action); } catch (e) { console.error("[GameInput] apply error:", e); }
+
+    // Guardar input en BD con orden y offset temporal
+    if (game.replay && game.replay.id) {
+      const seq = ++game.replay.seq;
+      const offset = Date.now() - game.replay.startMs;
+      bddConnection.query(
+        `CALL ${PROC.ADD_REPLAY_INPUT}(?, ?, ?, ?, ?);`,
+        [game.replay.id, seq, user.id, action, offset],
+        (err) => { if (err) console.error("[Replay] Add input error:", err); }
+      );
+    }
   });
+
+  // (Opcional) Evento para finalizar replay al acabar la partida
+  // socket.on("EndGame", () => { ... UPDATE Replay SET status='completed' ... });
 
   // ENVIAR MENSAJE (igual)  
   socket.on("ClientMessageToServer", (messageData) => {
@@ -318,6 +368,130 @@ io.on("connection", (socket) => {
     }
     console.log("Socket disconnected:", socket.id);
   });
+
+    function parseRoomIdFlexible(a, b) {
+      function norm(x) {
+        if (typeof x === "number") return x;
+        if (typeof x === "string") {
+          const n = Number(x);
+          return isFinite(n) ? n : 0;
+        }
+        if (Array.isArray(x) && x.length > 0) return norm(x[0]);
+        if (x && typeof x === "object") {
+          if (typeof x.roomId !== "undefined") return norm(x.roomId);
+          if (typeof x.id !== "undefined") return norm(x.id);
+        }
+        return 0;
+      }
+      const r1 = norm(a);
+      if (r1) return r1;
+      const r2 = norm(b);
+      return r2 || 0;
+    }
+
+    socket.on("ListReplaysRequest", (arg1, arg2) => {
+      const roomId = parseRoomIdFlexible(arg1, arg2);
+
+      if (!roomId || !isFinite(roomId) || roomId <= 0) {
+        console.log("[ListReplaysRequest] payload inválido:", arg1, arg2);
+        socket.emit("ListReplaysResponse", { status: "error", message: "roomId inválido", data: [] });
+        return;
+      }
+
+      bddConnection.query(
+        `CALL ${PROC.LIST_REPLAYS_FOR_ROOM}(?);`,
+        [roomId],
+        function (err, results) {
+          if (err) {
+            console.error("[ListReplays] DB error:", err);
+            socket.emit("ListReplaysResponse", { status: "error", message: "DB error", data: [] });
+            return;
+          }
+          var rows = (results && results[0]) ? results[0] : [];
+          var data = rows.map(function (r) {
+            return {
+              id: r.id,
+              created_at: r.created_at,
+              status: r.status,
+              seed: r.seed,
+              players: r.players || ""
+            };
+          });
+          socket.emit("ListReplaysResponse", { status: "success", roomId: roomId, data: data });
+        }
+      );
+    });
+
+    // Unirse a canal de replay (visualización)
+    socket.on("JoinReplayChannel", (payload) => {
+      let replayId = payload;
+      if (typeof replayId === "object" && replayId) replayId = replayId.replayId;
+      replayId = Number(replayId);
+      if (!replayId || !isFinite(replayId)) {
+        socket.emit("JoinReplayResponse", { status: "error", message: "replayId inválido" });
+        return;
+      }
+      socket.join(`replay_${replayId}`);
+      socket.emit("JoinReplayResponse", { status: "success", replayId });
+    });
+
+    // Iniciar reproducción (si no lo tenías ya)
+    socket.on("StartReplayRequest", (payload) => {
+      let replayId = payload;
+      if (typeof replayId === "object" && replayId) replayId = replayId.replayId;
+      replayId = Number(replayId);
+      if (!replayId || !isFinite(replayId)) {
+        socket.emit("StartReplayResponse", { status: "error", message: "replayId inválido" });
+        return;
+      }
+
+      // Cargar cabecera y jugadores
+      bddConnection.query("SELECT * FROM Replay WHERE id = ?;", [replayId], (err, repRows) => {
+        if (err || !repRows || repRows.length === 0) {
+          socket.emit("StartReplayResponse", { status: "error", message: "Replay no encontrada" });
+          return;
+        }
+        const seed = repRows[0].seed;
+
+        bddConnection.query("SELECT * FROM ReplayPlayer WHERE replay_id = ? ORDER BY player_index ASC;", [replayId], (err2, plRows) => {
+          if (err2 || !plRows || plRows.length === 0) {
+            socket.emit("StartReplayResponse", { status: "error", message: "Jugadores no encontrados" });
+            return;
+          }
+
+          // Crear motores por jugador
+          const engines = new Map();
+          plRows.forEach(pl => {
+            const engine = new NodeGridColumnsServer({ tickMs: 500, seed });
+            engine.onSetup = (setup) => io.to(`replay_${replayId}`).emit("setupGrid", JSON.stringify(setup));
+            engine.onUpdate = (update) => io.to(`replay_${replayId}`).emit("updateGrid", JSON.stringify(update));
+            engine.provideSetup({ playerId: pl.user_id, playerName: pl.username, sizeX: 6, sizeY: 12 });
+            engine.start();
+            engines.set(pl.user_id, { engine, timers: [] });
+          });
+
+          // Cargar inputs y dispararlos por offset
+          bddConnection.query("SELECT * FROM ReplayInput WHERE replay_id = ? ORDER BY seq ASC;", [replayId], (err3, inRows) => {
+            if (err3) {
+              socket.emit("StartReplayResponse", { status: "error", message: "Error cargando inputs" });
+              return;
+            }
+            inRows.forEach(ev => {
+              const rec = engines.get(ev.player_id);
+              if (!rec) return;
+              const tid = setTimeout(() => {
+                try { rec.engine.applyInput(ev.action); } catch (e) { console.error("[Replay] apply error:", e); }
+              }, Math.max(0, ev.ts_offset_ms));
+              rec.timers.push(tid);
+            });
+
+            // Opcional: guarda engines en memoria si quieres detener luego
+            socket.emit("StartReplayResponse", { status: "success", replayId });
+          });
+        });
+      });
+    });
+
 });
 
 module.exports = router;

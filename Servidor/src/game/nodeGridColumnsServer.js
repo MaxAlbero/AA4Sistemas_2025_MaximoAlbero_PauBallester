@@ -24,23 +24,35 @@ class NodeGridColumnsServer {
     this.sizeY = 0;
     this.playerId = 0;
     this.playerName = "P1";
-    this.grid = []; // [x][y] -> Jewel
+    this.grid = [];
 
-    // Estado de la columna en caída (3 gemas)
-    this.falling = {
-      x: 0,
-      yTop: -3,        // y del segmento superior (puede ser negativo antes de entrar en la parrilla)
-      jewels: [Jewel.Red, Jewel.Green, Jewel.Blue],
-      softDrop: false,
-      prevCells: []    // celdas visibles dibujadas previamente (para limpiar al mover)
-    };
+    // PRNG determinista
+    this.seed = String(opts.seed || (Math.random().toString(16).slice(2)));
+    this._rng = this._mulberry32(this._hashSeed(this.seed));
 
+    this.falling = { x: 0, yTop: -3, jewels: [Jewel.Red, Jewel.Green, Jewel.Blue], softDrop: false, prevCells: [] };
     this._interval = null;
 
-    // Callbacks hacia el exterior
-    this.onSetup = null;   // (GridSetup)
-    this.onUpdate = null;  // (GridUpdate)
-    this.onEnd = null;     // ()
+    this.onSetup = null;
+    this.onUpdate = null;
+    this.onEnd = null;
+  }
+
+  _hashSeed(seed) {
+    let h = 2166136261;
+    for (let i = 0; i < seed.length; i++) {
+      h ^= seed.charCodeAt(i);
+      h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+    }
+    return h >>> 0;
+  }
+  _mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
   }
 
   // Inicializa el grid y emite setup + snapshot inicial
@@ -217,13 +229,13 @@ class NodeGridColumnsServer {
     this._interval = setInterval(tick, this._tickMs());
   }
 
-  _spawnNewColumn() {
+ _spawnNewColumn() {
     this.falling.x = Math.floor(this.sizeX / 2);
     this.falling.yTop = -3;
     this.falling.jewels = [
-      JEWELS[Math.floor(Math.random() * JEWELS.length)],
-      JEWELS[Math.floor(Math.random() * JEWELS.length)],
-      JEWELS[Math.floor(Math.random() * JEWELS.length)],
+      JEWELS[Math.floor(this._rng() * JEWELS.length)],
+      JEWELS[Math.floor(this._rng() * JEWELS.length)],
+      JEWELS[Math.floor(this._rng() * JEWELS.length)],
     ];
     this.falling.prevCells = this._currentFallingCells();
   }
