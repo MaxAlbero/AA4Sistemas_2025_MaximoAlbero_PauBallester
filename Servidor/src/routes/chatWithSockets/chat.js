@@ -21,12 +21,13 @@ const loggedUsers = new Map();
 const roomChannel = (roomId) => `room_${roomId}`;
 
 // roomId -> { status, players:Set<userId>, engines: Map<userId,{engine,started,username}>, replay?: { id, seed, startMs, seq } }
-const roomGames = new Map();
+// Dentro del mapa de salas:
+const roomGames = new Map(); // roomId -> { status, players:Set<userId>, engines: Map<userId,{engine,started,username}>, replay?: { id, seed, startMs, seq }, viewerCount: 0 }
 
 function ensureRoom(roomId) {
   let game = roomGames.get(roomId);
   if (game) return game;
-  game = { status:"WAITING", players:new Set(), engines:new Map(), replay:null };
+  game = { status:"WAITING", players:new Set(), engines:new Map(), replay:null, viewerCount: 0 };
   roomGames.set(roomId, game);
   return game;
 }
@@ -34,7 +35,7 @@ function ensureRoom(roomId) {
 router.get("/", (req, res) => res.sendFile(path.resolve(__dirname + "/chat.html")));
 
 function emitRoomsToSocket(socket) {
-  bddConnection.query("SELECT id, name FROM Rooms ORDER BY id DESC", (err, rows) => {
+  bddConnection.query("SELECT id, name FROM Rooms ORDER BY id ASC", (err, rows) => {
     if (err) { console.error("Error fetching Rooms:", err); socket.emit("ChatRoomsData", []); return; }
     socket.emit("ChatRoomsData", rows);
   });
@@ -61,10 +62,35 @@ function parseIdFlexible(a, b) {
   return r2 || 0;
 }
 
+// Helper: emitir mensaje de sistema a la sala y (opcional) guardarlo en BD
+function sendSystemChat(roomId, text, type) {
+  const payload = { roomId: roomId, text: String(text || ""), type: String(type || "system"), ts: Date.now() };
+  // Emitir al canal de la sala (web clients deben escucharlo)
+  io.to(`room_${roomId}`).emit("RoomSystemMessage", JSON.stringify(payload));
+
+  // Opcional: guardar en BD si tienes SP ADD_MESSAGE (ajusta a tu esquema real)
+  try {
+    if (typeof PROC !== "undefined" && PROC.ADD_MESSAGE) {
+      // Ejemplo: CALL AddMessage(roomId, userId, username, message, type)
+      // Si tu SP pide campos distintos, ajusta aquí.
+      bddConnection.query(
+        `CALL ${PROC.ADD_MESSAGE}(?, ?, ?, ?, ?);`,
+        [roomId, null, "SYSTEM", payload.text, payload.type],
+        function onMsgInsert(err) {
+          if (err) console.error("[SystemChat] DB insert error:", err);
+        }
+      );
+    }
+  } catch (e) {
+    console.error("[SystemChat] emit/store error:", e);
+  }
+}
+
 io.on("connection", (socket) => {
-  const q = socket.handshake.query || {};
+  const q = socket.handshake && socket.handshake.query ? socket.handshake.query : {};
   socket.data = socket.data || {};
-  socket.data.isViewer = (q.viewer === "1");
+  socket.data.isViewer = (q.viewer === "1"); // Unity cliente usa viewer=1
+  socket.data.currentRoomId = 0;
 
   // LOGIN: admite 2 args (user, pass) o objeto/array
   socket.on("LoginRequest", (arg1, arg2) => {
@@ -169,28 +195,36 @@ io.on("connection", (socket) => {
   });
 
   // JOIN room: only logged web users become players; viewers are spectators
-  socket.on("JoinRoomRequest", (arg1, arg2) => {
-    let roomId = 0;
+  socket.on("JoinRoomRequest", function (arg1) {
+     let roomId = 0;
     if (typeof arg1 === "number") roomId = arg1;
-    else if (typeof arg1 === "string") {
-      const n = Number(arg1);
-      if (isFinite(n) && n > 0) roomId = n;
-      else { try { const o = JSON.parse(arg1); const raw = o && o.roomId; roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw); } catch { roomId = 0; } }
-    } else if (Array.isArray(arg1)) {
-      const f = arg1[0]; roomId = typeof f === "number" ? f : (isFinite(Number(f)) ? Number(f) : 0);
-    } else if (typeof arg1 === "object" && arg1) {
-      const raw = arg1.roomId; roomId = Array.isArray(raw) ? Number(raw[0]) : Number(raw);
-    }
-
+    else if (typeof arg1 === "string") { const n = Number(arg1); roomId = isFinite(n) ? n : 0; }
     if (!roomId || !isFinite(roomId) || roomId <= 0) {
-      socket.emit("JoinRoomResponse", { status: "error", message: "roomId is required" });
+      socket.emit("JoinRoomResponse", { status: "error", message: "roomId inválido" });
       return;
     }
 
     socket.join(roomChannel(roomId));
     const user = loggedUsers.get(socket.id);
     const game = ensureRoom(roomId);
-    let role = "spectator";
+      socket.join(`room_${roomId}`);
+      socket.data.currentRoomId = roomId;
+
+    // Si es viewer (Unity), incrementar y reanudar si estaba pausado
+    if (socket.data.isViewer) {
+      const prev = game.viewerCount || 0;
+      game.viewerCount = prev + 1;
+      if (prev === 0 && (game.status === "RUNNING" || game.status === "PAUSED")) {
+        // Reanudar motores
+        for (const [, rec] of game.engines.entries()) {
+          if (rec && rec.engine) { try { rec.engine.resume(); } catch (e) { console.error("[Resume] error:", e); } }
+        }
+        game.status = "RUNNING";
+        // Notificaciones
+        io.to(`room_${roomId}`).emit("RoomResumed", JSON.stringify({ roomId: roomId, reason: "Unity viewer connected" }));
+        sendSystemChat(roomId, "La partida se ha reanudado: hay un visualizador de Unity conectado.", "resumed");
+      }
+    }
 
     if (!socket.data.isViewer && user) {
       const userId = user.id;
@@ -256,7 +290,7 @@ io.on("connection", (socket) => {
       });
     }
 
-    socket.emit("JoinRoomResponse", { status: "success", roomId, role });
+    socket.emit("JoinRoomResponse", { status: "success", roomId, role: socket.data.isViewer ? "spectator" : "player" });
 
     // Re-emitir setup + snapshot al que se acaba de unir (players y viewers)
     for (const [, rec] of game.engines.entries()) {
@@ -370,24 +404,20 @@ io.on("connection", (socket) => {
   emitRoomsToSocket(socket);
 
   socket.on("disconnect", () => {
-    const user = loggedUsers.get(socket.id);
-    if (user) {
-      // Liberar player y detener motor de su grid
-      roomGames.forEach((game, rid) => {
-        if (game.players.delete(user.id)) {
-          const rec = game.engines.get(user.id);
-          if (rec) {
-            try { rec.engine.stop(); } catch {}
-            game.engines.delete(user.id);
-          }
-          if (game.players.size < 2 && game.status === "RUNNING") {
-            game.status = "WAITING";
-          }
+    const roomId = socket.data.currentRoomId || 0;
+    if (!roomId) return;
+    const game = roomGames.get(roomId);
+    if (game && socket.data.isViewer) {
+      const next = Math.max(0, (game.viewerCount || 0) - 1);
+      game.viewerCount = next;
+      if (next === 0 && game.status === "RUNNING") {
+        for (const [, rec] of game.engines.entries()) {
+          if (rec && rec.engine) { try { rec.engine.pause(); } catch {} }
         }
-      });
-      loggedUsers.delete(socket.id);
+        game.status = "PAUSED";
+        io.to(`room_${roomId}`).emit("RoomPaused", JSON.stringify({ roomId, reason: "No Unity viewers" }));
+      }
     }
-    console.log("Socket disconnected:", socket.id);
   });
 
     function parseRoomIdFlexible(a, b) {
@@ -520,7 +550,7 @@ io.on("connection", (socket) => {
     socket.on("GetRoomsRequest", function () {
       console.log("[GetRoomsRequest] from", socket.id);
       bddConnection.query(
-        "SELECT id, name FROM Rooms ORDER BY id DESC",
+        "SELECT id, name FROM Rooms ORDER BY id ASC",
         function (err, rows) {
           if (err) {
             console.error("[GetRoomsRequest] DB error:", err);
@@ -535,21 +565,35 @@ io.on("connection", (socket) => {
     });
 
     // Salir de sala
-    socket.on("LeaveRoomRequest", function (arg1) {
-      var roomId = 0;
-      if (typeof arg1 === "number") roomId = arg1;
-      else if (typeof arg1 === "string") { var n = Number(arg1); roomId = isFinite(n) ? n : 0; }
-      else if (Array.isArray(arg1) && arg1.length > 0) { var n2 = Number(arg1[0]); roomId = isFinite(n2) ? n2 : 0; }
+    socket.on("LeaveRoomRequest", (arg1) => {
+        let roomId = 0;
+        if (typeof arg1 === "number") roomId = arg1;
+        else if (typeof arg1 === "string") { const n = Number(arg1); roomId = isFinite(n) ? n : 0; }
+        if (!roomId || !isFinite(roomId) || roomId <= 0) {
+          socket.emit("LeaveRoomResponse", { status: "error", message: "roomId inválido" });
+          return;
+        }
+        const game = roomGames.get(roomId);
+        try { socket.leave(`room_${roomId}`); } catch {}
+        if (socket.data.currentRoomId === roomId) socket.data.currentRoomId = 0;
 
-      if (!roomId || !isFinite(roomId)) {
-        socket.emit("LeaveRoomResponse", { status: "error", message: "roomId inválido" });
-        return;
-      }
+        // Si es viewer (Unity), decrementar y pausar si llega a 0
+        if (game && socket.data.isViewer) {
+          const next = Math.max(0, (game.viewerCount || 0) - 1);
+          game.viewerCount = next;
+          if (next === 0 && game.status === "RUNNING") {
+            for (const [, rec] of game.engines.entries()) {
+              if (rec && rec.engine) { try { rec.engine.pause(); } catch (e) { console.error("[Pause] error:", e); } }
+            }
+            game.status = "PAUSED";
+            // Notificaciones
+            io.to(`room_${roomId}`).emit("RoomPaused", JSON.stringify({ roomId: roomId, reason: "No Unity viewers" }));
+            sendSystemChat(roomId, "La partida se ha pausado: no hay ningún visualizador de Unity conectado.", "paused");
+          }
+        }
 
-      try { socket.leave("room_" + String(roomId)); } catch (e) { console.error("[LeaveRoomRequest] leave error:", e); }
-      socket.emit("LeaveRoomResponse", { status: "success", roomId: roomId });
-    });
-
+        socket.emit("LeaveRoomResponse", { status: "success", roomId: roomId });
+      });
 });
 
 module.exports = router;

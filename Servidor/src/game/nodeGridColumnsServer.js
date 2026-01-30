@@ -36,6 +36,29 @@ class NodeGridColumnsServer {
     this.onSetup = null;
     this.onUpdate = null;
     this.onEnd = null;
+
+    this.isPaused = false;
+  }
+
+  pause() {
+    if (this._interval) {
+      clearInterval(this._interval);
+      this._interval = null;
+    }
+    this.isPaused = true;
+  }
+
+  // Reanudar si estaba pausado
+  resume() {
+    if (!this.isPaused) return;
+    this.isPaused = false;
+    if (this.sizeX <= 0 || this.sizeY <= 0) return;
+    const tick = () => {
+      const update = this.step();
+      if (update && this.onUpdate) this.onUpdate(update);
+    };
+    // Arranca con el tick actual (softDrop respeta _tickMs)
+    this._interval = setInterval(tick, this._tickMs());
   }
 
   _hashSeed(seed) {
@@ -109,6 +132,9 @@ class NodeGridColumnsServer {
 
   start() {
     if (this.sizeX <= 0 || this.sizeY <= 0) throw new Error("Call provideSetup first");
+    // Si ya había un intervalo activo, no dupliques
+    if (this._interval) return;
+    this.isPaused = false;
     const tick = () => {
       const update = this.step();
       if (update && this.onUpdate) this.onUpdate(update);
@@ -121,6 +147,7 @@ class NodeGridColumnsServer {
       clearInterval(this._interval);
       this._interval = null;
     }
+    this.isPaused = false;
     if (this.onEnd) this.onEnd();
   }
 
@@ -220,7 +247,7 @@ class NodeGridColumnsServer {
   }
 
   _retimeInterval() {
-    if (!this._interval) return;
+    if (!this._interval || this.isPaused) return;
     clearInterval(this._interval);
     const tick = () => {
       const update = this.step();
