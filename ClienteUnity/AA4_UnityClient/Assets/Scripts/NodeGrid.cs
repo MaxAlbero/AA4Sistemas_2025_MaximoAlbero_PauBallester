@@ -104,7 +104,7 @@ public class NodeGrid : MonoBehaviour
         // Crea el modelo de datos
         _grid = new Grid(gridSetup);
 
-        // Parámetros visuales simples (sin añadir campos a la clase)
+        // Parámetros visuales
         float cellSize = 1f;
         float padding = 0.05f;
         float visualSize = cellSize - padding;
@@ -125,7 +125,7 @@ public class NodeGrid : MonoBehaviour
             }
         }
 
-        // Crea visualización: un Quad por celda con nombre único Node_x_y
+        // Crear visualización: un Quad por celda con nombre único Node_x_y
         // Se colocan como hijos directos de este componente para poder localizarlos con Transform.Find
         for (int x = 0; x < _grid.columns.Count; x++)
         {
@@ -144,8 +144,7 @@ public class NodeGrid : MonoBehaviour
             }
         }
 
-        //// Centrar mínimamente la grid respecto al origen (opcional)
-        //float width = _grid.columns.Count * cellSize;
+        //// Centrar mínimamente la grid respecto al origen
         float height = (_grid.columns.Count > 0 ? _grid.columns[0].nodes.Count : 0) * cellSize;
         this.transform.localPosition = new Vector3(transform.localPosition.x, 0.5f * (height - cellSize), 0f);
 

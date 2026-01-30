@@ -156,7 +156,7 @@ public class MultiGridViewer : MonoBehaviour
             _grids.Remove(pid);
         }
 
-        // Extra robustez: limpia cualquier hijo residual bajo el viewer
+        // Limpiar cualquier hijo residual bajo el viewer
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             var child = transform.GetChild(i);

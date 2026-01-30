@@ -41,10 +41,6 @@ public class ReplayMenu : MonoBehaviour
                 var arr = obj["data"] as JArray;
                 if (arr == null) return;
                 EnqueueMain(() => PopulateList(arr));
-
-                //var obj = Newtonsoft.Json.Linq.JObject.Parse(json);
-                //var arr = (Newtonsoft.Json.Linq.JArray)obj["data"];
-                //PopulateList(arr);
             }
             catch (Exception ex)
             {
@@ -81,7 +77,6 @@ public class ReplayMenu : MonoBehaviour
     private void RequestList()
     {
         Debug.Log("[ReplayMenu] ListReplaysRequest roomId=" + roomId);
-        // Enviar número directamente
         socket.EmitAsync("ListReplaysRequest", roomId);
     }
 
@@ -120,7 +115,7 @@ public class ReplayMenu : MonoBehaviour
             btnGo.transform.SetParent(listContainer, false);
             btnGo.SetActive(true);
 
-            // Configura el texto (soporta Text y TMP_Text)
+            // Configuración del texto
             var unityText = btnGo.GetComponentInChildren<UnityEngine.UI.Text>();
             var tmpText = btnGo.GetComponentInChildren<TMPro.TMP_Text>();
             string label = $"Replay #{replayId} - {players} - {createdAt}";
@@ -160,7 +155,6 @@ public class ReplayMenu : MonoBehaviour
         if (gridViewer)
         {
             gridViewer.ClearAll();
-            // Habilita recepción para ver la replay (si la habías deshabilitado al salir de sala)
             var viewerType = gridViewer.GetType();
             var field = viewerType.GetField("_acceptUpdates", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             if (field != null) field.SetValue(gridViewer, true);
