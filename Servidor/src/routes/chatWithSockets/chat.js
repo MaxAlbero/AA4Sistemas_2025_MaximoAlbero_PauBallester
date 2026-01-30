@@ -203,8 +203,8 @@ io.on("connection", (socket) => {
         if (!game.engines.has(userId)) {
           const engine = new NodeGridColumnsServer({ tickMs: 500, seed });
           game.engines.set(userId, { engine, started:false, username:user.username });
-          engine.onSetup = (gridSetup) => io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(gridSetup));
-          engine.onUpdate = (gridUpdate) => io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(gridUpdate));
+          engine.onSetup  = (setup)  => io.to(roomChannel(roomId)).emit("setupGrid", JSON.stringify(setup));
+          engine.onUpdate = (update) => io.to(roomChannel(roomId)).emit("updateGrid", JSON.stringify(update));
           engine.provideSetup({ playerId: userId, playerName: user.username, sizeX: 6, sizeY: 12 });
         }
       }
@@ -507,11 +507,47 @@ io.on("connection", (socket) => {
 
             // Opcional: guarda engines en memoria si quieres detener luego
 
-            
+
             socket.emit("StartReplayResponse", { status: "success", replayId: replayId });
           });
         });
       });
+    });
+
+    function roomChannel(roomId) { return "room_" + String(roomId); }
+
+    // Listar salas bajo demanda
+    socket.on("GetRoomsRequest", function () {
+      console.log("[GetRoomsRequest] from", socket.id);
+      bddConnection.query(
+        "SELECT id, name FROM Rooms ORDER BY id DESC",
+        function (err, rows) {
+          if (err) {
+            console.error("[GetRoomsRequest] DB error:", err);
+            socket.emit("ChatRoomsData", JSON.stringify([]));
+            return;
+          }
+          const payload = JSON.stringify(rows || []);
+          console.log("[GetRoomsRequest] Emitting ChatRoomsData:", payload);
+          socket.emit("ChatRoomsData", payload);
+        }
+      );
+    });
+
+    // Salir de sala
+    socket.on("LeaveRoomRequest", function (arg1) {
+      var roomId = 0;
+      if (typeof arg1 === "number") roomId = arg1;
+      else if (typeof arg1 === "string") { var n = Number(arg1); roomId = isFinite(n) ? n : 0; }
+      else if (Array.isArray(arg1) && arg1.length > 0) { var n2 = Number(arg1[0]); roomId = isFinite(n2) ? n2 : 0; }
+
+      if (!roomId || !isFinite(roomId)) {
+        socket.emit("LeaveRoomResponse", { status: "error", message: "roomId inválido" });
+        return;
+      }
+
+      try { socket.leave("room_" + String(roomId)); } catch (e) { console.error("[LeaveRoomRequest] leave error:", e); }
+      socket.emit("LeaveRoomResponse", { status: "success", roomId: roomId });
     });
 
 });
