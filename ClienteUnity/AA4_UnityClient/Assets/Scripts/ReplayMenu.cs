@@ -41,6 +41,10 @@ public class ReplayMenu : MonoBehaviour
                 var arr = obj["data"] as JArray;
                 if (arr == null) return;
                 EnqueueMain(() => PopulateList(arr));
+
+                //var obj = Newtonsoft.Json.Linq.JObject.Parse(json);
+                //var arr = (Newtonsoft.Json.Linq.JArray)obj["data"];
+                //PopulateList(arr);
             }
             catch (Exception ex)
             {
@@ -151,12 +155,15 @@ public class ReplayMenu : MonoBehaviour
     private void StartReplay(int replayId)
     {
         Debug.Log("[ReplayMenu] StartReplay id=" + replayId);
-        socket.EmitAsync("JoinReplayChannel", new JObject { ["replayId"] = replayId });
-        socket.EmitAsync("StartReplayRequest", new JObject { ["replayId"] = replayId });
 
-        //if (gridViewer) gridViewer.ClearAll();
+        // Enviar número simple (no JObject) para evitar ambigüedades de serialización
+        socket.EmitAsync("JoinReplayChannel", replayId);
+        socket.EmitAsync("StartReplayRequest", replayId);
+
+        if (gridViewer) gridViewer.ClearAll();
         CloseMenu();
     }
+
 
     private string Extract(SocketIOResponse response)
     {
