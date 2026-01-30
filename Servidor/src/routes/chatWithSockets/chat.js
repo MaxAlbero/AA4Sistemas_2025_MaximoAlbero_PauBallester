@@ -40,6 +40,27 @@ function emitRoomsToSocket(socket) {
   });
 }
 
+function parseIdFlexible(a, b) {
+  function norm(x) {
+    if (typeof x === "number") return x;
+    if (typeof x === "string") {
+      const n = Number(x);
+      return isFinite(n) ? n : 0;
+    }
+    if (Array.isArray(x) && x.length > 0) return norm(x[0]);
+    if (x && typeof x === "object") {
+      // intenta con replayId o id
+      if (typeof x.replayId !== "undefined") return norm(x.replayId);
+      if (typeof x.id !== "undefined") return norm(x.id);
+    }
+    return 0;
+  }
+  const r1 = norm(a);
+  if (r1) return r1;
+  const r2 = norm(b);
+  return r2 || 0;
+}
+
 io.on("connection", (socket) => {
   const q = socket.handshake.query || {};
   socket.data = socket.data || {};
@@ -417,30 +438,29 @@ io.on("connection", (socket) => {
               players: r.players || ""
             };
           });
-          socket.emit("ListReplaysResponse", { status: "success", roomId: roomId, data: data });
+          socket.emit("ListReplaysResponse", JSON.stringify({ status: "success", roomId: roomId, data: data }));
+          // socket.emit("ListReplaysResponse", { status: "success", roomId: roomId, data: data });
         }
       );
     });
 
     // Unirse a canal de replay (visualización)
-    socket.on("JoinReplayChannel", (payload) => {
-      let replayId = payload;
-      if (typeof replayId === "object" && replayId) replayId = replayId.replayId;
-      replayId = Number(replayId);
+    socket.on("JoinReplayChannel", function (arg1, arg2) {
+      const replayId = parseIdFlexible(arg1, arg2);
       if (!replayId || !isFinite(replayId)) {
+        console.log("[JoinReplayChannel] payload inválido:", arg1, arg2);
         socket.emit("JoinReplayResponse", { status: "error", message: "replayId inválido" });
         return;
       }
-      socket.join(`replay_${replayId}`);
-      socket.emit("JoinReplayResponse", { status: "success", replayId });
+      socket.join("replay_" + replayId);
+      socket.emit("JoinReplayResponse", { status: "success", replayId: replayId });
     });
 
     // Iniciar reproducción (si no lo tenías ya)
-    socket.on("StartReplayRequest", (payload) => {
-      let replayId = payload;
-      if (typeof replayId === "object" && replayId) replayId = replayId.replayId;
-      replayId = Number(replayId);
+    socket.on("StartReplayRequest", function (arg1, arg2) {
+      const replayId = parseIdFlexible(arg1, arg2);
       if (!replayId || !isFinite(replayId)) {
+        console.log("[StartReplayRequest] payload inválido:", arg1, arg2);
         socket.emit("StartReplayResponse", { status: "error", message: "replayId inválido" });
         return;
       }
@@ -486,7 +506,9 @@ io.on("connection", (socket) => {
             });
 
             // Opcional: guarda engines en memoria si quieres detener luego
-            socket.emit("StartReplayResponse", { status: "success", replayId });
+
+            
+            socket.emit("StartReplayResponse", { status: "success", replayId: replayId });
           });
         });
       });
