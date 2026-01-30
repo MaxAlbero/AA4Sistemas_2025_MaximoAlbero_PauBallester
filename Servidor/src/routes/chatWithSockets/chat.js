@@ -195,14 +195,28 @@ io.on("connection", (socket) => {
   });
 
   // JOIN room: only logged web users become players; viewers are spectators
-  socket.on("JoinRoomRequest", function (arg1) {
-     let roomId = 0;
-    if (typeof arg1 === "number") roomId = arg1;
-    else if (typeof arg1 === "string") { const n = Number(arg1); roomId = isFinite(n) ? n : 0; }
-    if (!roomId || !isFinite(roomId) || roomId <= 0) {
-      socket.emit("JoinRoomResponse", { status: "error", message: "roomId inválido" });
-      return;
-    }
+  socket.on("JoinRoomRequest", function (arg1, arg2) {
+    var roomId = 0;
+
+      function normId(x) {
+        if (x === null || x === undefined) return 0;
+        if (typeof x === "number") return x;
+        if (typeof x === "string") {
+          var n = Number(x);
+          return isFinite(n) ? n : 0;
+        }
+        if (Array.isArray(x) && x.length > 0) {
+          return normId(x[0]);
+        }
+        if (typeof x === "object") {
+          if (typeof x.roomId !== "undefined") return normId(x.roomId);
+          if (typeof x.id !== "undefined") return normId(x.id);
+        }
+        return 0;
+      }
+
+      roomId = normId(arg1);
+      if (!roomId) roomId = normId(arg2);
 
     socket.join(roomChannel(roomId));
     const user = loggedUsers.get(socket.id);
@@ -290,6 +304,7 @@ io.on("connection", (socket) => {
       });
     }
 
+    socket.join("room_" + String(roomId));
     socket.emit("JoinRoomResponse", { status: "success", roomId, role: socket.data.isViewer ? "spectator" : "player" });
 
     // Re-emitir setup + snapshot al que se acaba de unir (players y viewers)
@@ -343,9 +358,6 @@ io.on("connection", (socket) => {
       );
     }
   });
-
-  // (Opcional) Evento para finalizar replay al acabar la partida
-  // socket.on("EndGame", () => { ... UPDATE Replay SET status='completed' ... });
 
   // ENVIAR MENSAJE (igual)  
   socket.on("ClientMessageToServer", (messageData) => {
