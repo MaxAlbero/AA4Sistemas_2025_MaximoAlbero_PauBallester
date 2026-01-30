@@ -7,7 +7,7 @@ const bdd = app.get("bdd");
 const games = new Map(); // gameId -> { id, title, status: 'WAITING'|'RUNNING'|'ENDED', engine, viewers:Set<socket.id>, createdAt, replayId }
 let nextGameId = 1;
 
-// Helpers SQL para replays (usa tablas ya creadas)
+// Helpers SQL para replays
 function createReplay({ room_id = null, owner_user_id = null, title = null }, cb) {
   bdd.query(
     "INSERT INTO Replays (room_id, owner_user_id, title) VALUES (?, ?, ?);",
@@ -49,7 +49,7 @@ io.on("connection", (socket) => {
     socket.emit("GameList", list);
   });
 
-  // Crear partida (servidor será el cerebro, el cliente solo visualiza)
+  // Crear partida
   socket.on("GameCreateRequest", (data) => {
     const dataObj = data || {};
         const title = (dataObj.title || "").trim() ||  `Game #${nextGameId}`;

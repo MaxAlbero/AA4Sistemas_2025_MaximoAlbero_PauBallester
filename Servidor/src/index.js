@@ -95,9 +95,6 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('Cliente desconectado:', socket.id);
-    // Nota: si el cliente estaba en una sala, convendría decrementar unityCount.
-    // Esto se puede lograr guardando roomId en el socket al unirse y aplicando la misma lógica que leaveRoom.
-    console.log("fasfsadufdshfiuhfdsiufhdif");
   });
     // Listado de salas desde BDD
     socket.on('requestRooms', () => {
@@ -126,8 +123,6 @@ server.listen(app.get("port"), () => {
 
     console.log("Servidor en la url: http://" + ip + ":" + port + "/");
 });
-
-//Función de ayuda para obtener la IP - por ahora se queda comentada
 
 const { networkInterfaces} = require ("os");
 GetIp = () => {

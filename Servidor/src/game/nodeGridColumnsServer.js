@@ -1,7 +1,3 @@
-// Server-authoritative Columns engine using NodeGrid structures.
-// GridSetup: { playerId, playerName, sizeX, sizeY }
-// GridUpdate: { playerId, playerName, updatedNodes: [{ type, x, y }] }
-
 const Jewel = {
   None: 0,
   Red: 1,
@@ -132,7 +128,7 @@ class NodeGridColumnsServer {
 
   start() {
     if (this.sizeX <= 0 || this.sizeY <= 0) throw new Error("Call provideSetup first");
-    // Si ya había un intervalo activo, no dupliques
+    // Si ya había un intervalo activo, que no se duplique
     if (this._interval) return;
     this.isPaused = false;
     const tick = () => {

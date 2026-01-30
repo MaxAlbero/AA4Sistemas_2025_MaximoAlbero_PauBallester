@@ -20,8 +20,6 @@ const PROC = {
 const loggedUsers = new Map();
 const roomChannel = (roomId) => `room_${roomId}`;
 
-// roomId -> { status, players:Set<userId>, engines: Map<userId,{engine,started,username}>, replay?: { id, seed, startMs, seq } }
-// Dentro del mapa de salas:
 const roomGames = new Map(); // roomId -> { status, players:Set<userId>, engines: Map<userId,{engine,started,username}>, replay?: { id, seed, startMs, seq }, viewerCount: 0 }
 
 function ensureRoom(roomId) {
@@ -50,7 +48,6 @@ function parseIdFlexible(a, b) {
     }
     if (Array.isArray(x) && x.length > 0) return norm(x[0]);
     if (x && typeof x === "object") {
-      // intenta con replayId o id
       if (typeof x.replayId !== "undefined") return norm(x.replayId);
       if (typeof x.id !== "undefined") return norm(x.id);
     }
@@ -62,17 +59,14 @@ function parseIdFlexible(a, b) {
   return r2 || 0;
 }
 
-// Helper: emitir mensaje de sistema a la sala y (opcional) guardarlo en BD
+// Helper: emitir mensaje de sistema a la sala y guardarlo en BD
 function sendSystemChat(roomId, text, type) {
   const payload = { roomId: roomId, text: String(text || ""), type: String(type || "system"), ts: Date.now() };
   // Emitir al canal de la sala (web clients deben escucharlo)
   io.to(`room_${roomId}`).emit("RoomSystemMessage", JSON.stringify(payload));
 
-  // Opcional: guardar en BD si tienes SP ADD_MESSAGE (ajusta a tu esquema real)
   try {
     if (typeof PROC !== "undefined" && PROC.ADD_MESSAGE) {
-      // Ejemplo: CALL AddMessage(roomId, userId, username, message, type)
-      // Si tu SP pide campos distintos, ajusta aquí.
       bddConnection.query(
         `CALL ${PROC.ADD_MESSAGE}(?, ?, ?, ?, ?);`,
         [roomId, null, "SYSTEM", payload.text, payload.type],
@@ -316,7 +310,7 @@ io.on("connection", (socket) => {
       } catch (e) { console.error("[JoinRoom] emit setup/fullUpdate error:", e); }
     }
 
-    // Messages (unchanged)
+    // Messages
     bddConnection.query(`CALL ${PROC.GET_ROOM_MESSAGES}(?);`, [roomId], (err, results) => {
       if (err) return;
       const rows = results[0] || [];
@@ -359,7 +353,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ENVIAR MENSAJE (igual)  
+  // ENVIAR MENSAJE
   socket.on("ClientMessageToServer", (messageData) => {
     const user = loggedUsers.get(socket.id);
     if (!user) {
@@ -498,7 +492,7 @@ io.on("connection", (socket) => {
       socket.emit("JoinReplayResponse", { status: "success", replayId: replayId });
     });
 
-    // Iniciar reproducción (si no lo tenías ya)
+    // Iniciar reproducción
     socket.on("StartReplayRequest", function (arg1, arg2) {
       const replayId = parseIdFlexible(arg1, arg2);
       if (!replayId || !isFinite(replayId)) {
@@ -546,9 +540,6 @@ io.on("connection", (socket) => {
               }, Math.max(0, ev.ts_offset_ms));
               rec.timers.push(tid);
             });
-
-            // Opcional: guarda engines en memoria si quieres detener luego
-
 
             socket.emit("StartReplayResponse", { status: "success", replayId: replayId });
           });
