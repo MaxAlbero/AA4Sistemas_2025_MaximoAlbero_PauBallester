@@ -1,49 +1,543 @@
-.FullScreenObject{
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f2f5;
+}
+
+.FullScreenObject {
     width: 100%;
     height: 100%;
 }
 
-.ChatContainer{
-    background-color: cornflowerblue;
+/* ============ LOGIN SECTION ============ */
+.LoginSection {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 20px;
+}
+
+.LoginBox {
+    background: white;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
     width: 100%;
-    height: 100%;
+    max-width: 400px;
+    animation: slideIn 0.3s ease-out;
 }
 
-.MessagesContainer{
-    height: 90%;
-    
+.LoginBox h1 {
+    text-align: center;
+    color: #333;
+    margin: 0 0 30px 0;
+    font-size: 28px;
+    font-weight: 700;
 }
 
-.InputContainer{
-    height: 10%;
-    padding-left: 10%;
-
+.FormGroup {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
-.MessagesContainer p {
-    font-family: 'Times New Roman', Times, serif;
-    border-width: 2px;
-    border-style: solid;
-    margin: 5px;
+.FormGroup label {
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 8px;
+    font-size: 14px;
 }
 
-.MyMessage{
-    border-color: green;
-    text-align: right;
+.FormGroup input {
+    padding: 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    font-family: inherit;
 }
 
-.OthersMessage{
-    border-color: crimson;
+.FormGroup input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.MessageInput{
-    width: 75%;
-}
-
-.MessageButton {
-    width: 20%;
+.FormGroup input::placeholder {
+    color: #999;
 }
 
 .ErrorMessage {
-    color: red; 
+    color: #e74c3c;
+    font-size: 13px;
+    margin: 10px 0;
+    min-height: 18px;
+    animation: shake 0.3s ease-in-out;
+}
+
+/* ============ BUTTONS ============ */
+.PrimaryButton {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+}
+
+.PrimaryButton:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+}
+
+.PrimaryButton:active {
+    transform: translateY(0);
+}
+
+.DangerButton {
+    padding: 8px 16px;
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+    font-family: inherit;
+}
+
+.DangerButton:hover {
+    background-color: #c0392b;
+    transform: translateY(-1px);
+}
+
+.DangerButton:active {
+    transform: translateY(0);
+}
+
+.JoinButton {
+    padding: 8px 16px;
+    background-color: #27ae60;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.JoinButton:hover {
+    background-color: #229954;
+    transform: translateY(-1px);
+}
+
+/* ============ USER INFO BAR ============ */
+.UserInfoBar {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 20px;
+    border-bottom: 2px solid #555;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.UserInfoContent {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.UserLabel {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* ============ ROOMS SECTION ============ */
+.RoomsSection {
+    min-height: calc(100vh - 60px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 30px 20px;
+    background-color: #f0f2f5;
+}
+
+.RoomsBox {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 600px;
+}
+
+.RoomsBox h2 {
+    color: #333;
+    margin: 0 0 25px 0;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.CreateRoomForm {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+}
+
+.CreateRoomForm input {
+    flex: 1;
+    min-width: 200px;
+    padding: 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+    font-family: inherit;
+    transition: border-color 0.3s;
+}
+
+.CreateRoomForm input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.CreateRoomForm button {
+    flex: 0 0 auto;
+}
+
+.RoomListContainer {
+    margin-top: 20px;
+}
+
+.NoRoomsMessage {
+    color: #999;
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+}
+
+.RoomsList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.RoomItem {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    transition: all 0.3s;
+}
+
+.RoomItem:hover {
+    background: #f0f2f5;
+    border-color: #667eea;
+    transform: translateX(3px);
+}
+
+.RoomInfo {
+    flex: 1;
+    color: #333;
+    font-size: 15px;
+}
+
+.RoomInfo strong {
+    color: #667eea;
+    font-size: 16px;
+}
+
+/* ============ CHAT CONTAINER ============ */
+.ChatContainer {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: #fff;
+}
+
+.ChatHeader {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #555;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.RoomTitle {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+/* ============ MESSAGES CONTAINER ============ */
+.MessagesContainer {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    background-color: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.MessagesContainer::-webkit-scrollbar {
+    width: 8px;
+}
+
+.MessagesContainer::-webkit-scrollbar-track {
+    background: #f0f2f5;
+}
+
+.MessagesContainer::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}
+
+.MessagesContainer::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* Single-line message: "[username]: [mensaje]" */
+.MessageLine {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 15px;
+    line-height: 1.4;
+    max-width: 84%;
+    word-wrap: break-word;
+    display: inline-block;
+    /* subtle border to separate messages visually */
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.03);
+}
+
+/* My messages (aligned right) */
+.MessageLine.MyMessage {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    align-self: flex-end;
+    border: 1px solid rgba(255,255,255,0.12);
+}
+
+/* Others (aligned left) */
+.MessageLine.OthersMessage {
+    background-color: #eef1f7;
+    color: #17202a;
+    align-self: flex-start;
+    border: 1px solid rgba(102,126,234,0.08);
+}
+
+/* ensure spacing between multiple lines */
+.MessageLine + .MessageLine {
+    margin-top: 6px;
+}
+
+/* ============ INPUT CONTAINER ============ */
+.InputContainer {
+    display: flex;
+    padding: 15px 20px;
+    background-color: #fff;
+    border-top: 2px solid #e0e0e0;
+    gap: 10px;
+    align-items: center;
+}
+
+.MessageInput {
+    flex: 1;
+    padding: 12px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 24px;
+    font-size: 16px;
+    font-family: inherit;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    resize: none;
+}
+
+.MessageInput:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.MessageInput::placeholder {
+    color: #999;
+}
+
+.MessageButton {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 24px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.MessageButton:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(102, 126, 234, 0.3);
+}
+
+.MessageButton:active {
+    transform: translateY(0);
+}
+
+/* ============ ANIMATIONS ============ */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+/* ============ RESPONSIVE ============ */
+@media (max-width: 768px) {
+    .LoginBox {
+        padding: 30px 20px;
+    }
+
+    .RoomsBox {
+        padding: 20px;
+    }
+
+    .RoomItem {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .RoomInfo {
+        width: 100%;
+    }
+
+    .JoinButton {
+        width: 100%;
+    }
+
+    .MessageLine {
+        max-width: 85%;
+    }
+
+    .InputContainer {
+        flex-wrap: wrap;
+    }
+
+    .MessageInput,
+    .MessageButton {
+        flex: 1;
+        min-width: 100px;
+    }
+
+    .UserInfoContent {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+
+    .UserLabel {
+        font-size: 14px;
+    }
+
+    .DangerButton {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .LoginBox {
+        padding: 25px 15px;
+    }
+
+    .LoginBox h1 {
+        font-size: 24px;
+    }
+
+    .RoomsBox h2 {
+        font-size: 20px;
+    }
+
+    .CreateRoomForm {
+        flex-direction: column;
+    }
+
+    .CreateRoomForm input,
+    .CreateRoomForm button {
+        width: 100%;
+    }
+
+    .ChatHeader {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+
+    .RoomTitle {
+        font-size: 16px;
+    }
+
+    #LeaveRoomBtn {
+        width: 100%;
+    }
+
+    .MessageLine {
+        max-width: 90%;
+    }
+
+    .MessagesContainer {
+        padding: 15px 10px;
+    }
+
+    .InputContainer {
+        padding: 10px;
+    }
 }

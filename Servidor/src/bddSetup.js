@@ -1,10 +1,10 @@
 const mysql = require("mysql");
 
 const connection = mysql.createConnection({
-    host: "localhost",
-    user: "serverUser",
-    password: "user",
-    database: "mydb"
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "serverUser",
+  password: process.env.DB_PASS || "user",
+  database: process.env.DB_NAME || "mydb"
 });
 
 connection.connect((error) => {
@@ -23,8 +23,8 @@ connection.connect((error) => {
         {
             console.log("Results: ");
             console.log(result);
-            console.log("Fields: ");
-            console.log(fields);
+            // console.log("Fields: ");
+            // console.log(fields);
         }
 
     })

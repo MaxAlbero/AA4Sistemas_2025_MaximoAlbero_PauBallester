@@ -33,24 +33,90 @@ app.set("io", io);
 const bddConnection = require("./bddSetup");
 app.set("bdd", bddConnection);
 
+require("./routes/gameSockets");
+
+const roomState = new Map(); // roomId -> { unityCount: number, paused: boolean }
+
 io.on('connection', (socket) => {
-    console.log('Un cliente se ha conectado:', socket.id);
-    
-    // Manejador del evento "message"
-    socket.on('message', (data) => {
-        console.log('Mensaje recibido del cliente:', data);
-        
-        // Responder al cliente que envió el mensaje
-        socket.emit('message', 'Servidor: Mensaje recibido correctamente!');
-        
-        // O responder a TODOS los clientes
-        // io.emit('message', 'Servidor broadcast: ' + data);
+  console.log('Cliente conectado:', socket.id);
+
+  let clientType = 'web'; // por defecto
+  socket.on('registerClientType', (type) => {
+    if (type === 'unity' || type === 'web') {
+      clientType = type;
+      console.log(`Client ${socket.id} registrado como ${clientType}`);
+    }
+  });
+
+    socket.on('joinRoom', (data) => {
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    const { roomId, playerId, playerName } = parsed;
+
+    socket.join(roomId);
+    socket.data.currentRoomId = roomId;
+
+    // Emitir setup inicial de la grid sólo para visualización del cliente
+    const gridSetup = {
+        playerId: playerId,
+        playerName: playerName,
+        sizeX: 6,
+        sizeY: 12
+    };
+
+    console.log(`Enviando setupGrid a ${socket.id}:`, gridSetup);
+    socket.emit('setupGrid', JSON.stringify(gridSetup));
+  });
+
+  socket.on('gameUpdate', (data) => {
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    const { roomId, gridUpdate } = parsed;
+
+    const state = roomState.get(roomId) || { unityCount: 0, paused: false };
+    if (state.unityCount <= 0) {
+      if (!state.paused) {
+        state.paused = true;
+        console.log(`Sala ${roomId} en pausa: no hay clientes Unity conectados`);
+        io.to(roomId).emit('pauseState', { paused: true });
+      }
+      roomState.set(roomId, state);
+      return; // no emitir updates si no hay Unity
+    }
+
+    console.log(`Enviando updateGrid a sala ${roomId}`);
+    io.to(roomId).emit('updateGrid', JSON.stringify(gridUpdate));
+  });
+
+    socket.on('leaveRoom', (data) => {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        const { roomId } = parsed;
+        socket.leave(roomId);
+        socket.data.currentRoomId = null;
     });
-    
-    socket.on('disconnect', () => {
-        console.log('Cliente desconectado:', socket.id);
+
+  socket.on('disconnect', () => {
+    console.log('Cliente desconectado:', socket.id);
+    // Nota: si el cliente estaba en una sala, convendría decrementar unityCount.
+    // Esto se puede lograr guardando roomId en el socket al unirse y aplicando la misma lógica que leaveRoom.
+    console.log("fasfsadufdshfiuhfdsiufhdif");
+  });
+    // Listado de salas desde BDD
+    socket.on('requestRooms', () => {
+        // Si el cliente ya está en una sala, no devolver listado
+        if (socket.data && socket.data.currentRoomId) {
+            socket.emit('roomsInfo', []); // o no emitir nada; aquí devolvemos lista vacía por claridad del cliente
+            return;
+        }
+        const db = app.get('bdd');
+        db.query('SELECT id, name FROM Rooms ORDER BY id ASC', (err, rows) => {
+            if (err) {
+            console.error('Error fetching rooms:', err);
+            socket.emit('roomsInfo', []);
+            return;
+            }
+            socket.emit('roomsInfo', rows);
+        });
     });
-});  
+});
 
 app.use(require("./routes/_routes"));
 
@@ -85,83 +151,3 @@ GetIp = () => {
     //return results;
     return results["enp0s3"][0]; //La IP
 }
-
-
-io.on('connection', (socket) => {
-    console.log('Cliente conectado:', socket.id);
-    
-    // === EVENTO: Cliente solicita unirse a una sala ===
-    socket.on('joinRoom', (data) => {
-        try {
-            // Parsear el JSON que viene de Unity
-            const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-            const { roomId, playerId, playerName } = parsedData;
-            
-            console.log(`joinRoom recibido:`, parsedData);
-            
-            socket.join(roomId);
-            console.log(`Jugador ${playerName} (ID: ${playerId}) se unió a sala ${roomId}`);
-            
-            // Enviar setup inicial del grid a ESTE cliente
-            const gridSetup = {
-                playerId: playerId,
-                playerName: playerName,
-                sizeX: 6,
-                sizeY: 12
-            };
-            
-            console.log(`Enviando setupGrid:`, gridSetup);
-            socket.emit('setupGrid', JSON.stringify(gridSetup));
-            
-            // OPCIONAL: También enviar a los DEMÁS clientes de la sala
-            // socket.to(roomId).emit('setupGrid', JSON.stringify(gridSetup));
-            
-        } catch (error) {
-            console.error('Error en joinRoom:', error);
-        }
-    });
-    
-    // === EVENTO: Actualizar el grid ===
-    socket.on('gameUpdate', (data) => {
-        try {
-            const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-            const { roomId, gridUpdate } = parsedData;
-            
-            console.log(`gameUpdate recibido para sala ${roomId}:`, gridUpdate);
-            
-            // Enviar la actualización a TODOS los clientes de esa sala
-            console.log(`Enviando updateGrid a sala ${roomId}`);
-            io.to(roomId).emit('updateGrid', JSON.stringify(gridUpdate));
-            
-        } catch (error) {
-            console.error('Error en gameUpdate:', error);
-        }
-    });
-    
-    // === EVENTO: Jugador sale de la sala ===
-    socket.on('leaveRoom', (data) => {
-        try {
-            const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-            const { roomId, playerId } = parsedData;
-            
-            socket.leave(roomId);
-            console.log(`Jugador ID ${playerId} salió de sala ${roomId}`);
-            
-            // Avisar a los demás clientes
-            io.to(roomId).emit('removePlayer', playerId);
-            
-        } catch (error) {
-            console.error('Error en leaveRoom:', error);
-        }
-    });
-    
-    socket.on('disconnect', () => {
-        console.log('Cliente desconectado:', socket.id);
-    });
-    
-    // Evento de prueba
-    socket.on('message', (data) => {
-        console.log('Mensaje:', data);
-        socket.emit('message', 'Servidor: Mensaje recibido correctamente!');
-    });
-});
